@@ -5,6 +5,7 @@ import Sidebar from '../components/Sidebar';
 
 export default function DashboardPage() {
   const [timeRange, setTimeRange] = useState('20 Jun. 2022 - 20 Jul. 2022');
+  const [hoveredPoint, setHoveredPoint] = useState<number | null>(null);
 
   const [realtimeData, setRealtimeData] = useState({
     processingRate: 97.8,
@@ -406,29 +407,60 @@ export default function DashboardPage() {
                   strokeLinejoin="round"
                 />
                 
-                {/* Data points */}
-                {points.map((point, idx) => (
-                  <circle
-                    key={idx}
-                    cx={point.x}
-                    cy={point.y}
-                    r="4"
-                    fill="#fff"
-                    stroke="#000"
-                    strokeWidth="2.5"
-                  />
-                ))}
-                
-                {/* Highlight point with tooltip */}
-                <circle cx={points[4].x} cy={points[4].y} r="6" fill="#7c3aed" />
-                <circle cx={points[4].x} cy={points[4].y} r="4" fill="#fff" />
-                
-                {/* Tooltip */}
-                <g transform={`translate(${points[4].x - 50}, ${points[4].y - 50})`}>
-                  <rect x="0" y="0" width="100" height="40" rx="8" fill="#7c3aed" />
-                  <text x="50" y="18" textAnchor="middle" className="text-xs fill-white font-medium">$52,167.99</text>
-                  <text x="50" y="32" textAnchor="middle" className="text-xs fill-white opacity-80">May 25, 2022</text>
-                </g>
+                {/* Interactive data points with hover areas */}
+                {points.map((point, idx) => {
+                  const isHovered = hoveredPoint === idx;
+                  const tooltipX = point.x < 120 ? point.x : point.x > 480 ? point.x - 100 : point.x - 50;
+                  const tooltipY = point.y < 80 ? point.y + 15 : point.y - 50;
+                  
+                  return (
+                    <g key={idx}>
+                      {/* Invisible hover area */}
+                      <circle
+                        cx={point.x}
+                        cy={point.y}
+                        r="15"
+                        fill="transparent"
+                        className="cursor-pointer"
+                        onMouseEnter={() => setHoveredPoint(idx)}
+                        onMouseLeave={() => setHoveredPoint(null)}
+                      />
+                      
+                      {/* Visual dot */}
+                      <circle
+                        cx={point.x}
+                        cy={point.y}
+                        r={isHovered ? "6" : "4"}
+                        fill={isHovered ? "#7c3aed" : "#fff"}
+                        stroke={isHovered ? "#7c3aed" : "#000"}
+                        strokeWidth="2.5"
+                        className="transition-all pointer-events-none"
+                      />
+                      {isHovered && (
+                        <circle
+                          cx={point.x}
+                          cy={point.y}
+                          r="4"
+                          fill="#fff"
+                          className="pointer-events-none"
+                        />
+                      )}
+                      
+                      {/* Tooltip on hover */}
+                      {isHovered && (
+                        <g transform={`translate(${tooltipX}, ${tooltipY})`} className="pointer-events-none">
+                          <rect x="0" y="0" width="100" height="40" rx="8" fill="#7c3aed" />
+                          <text x="50" y="18" textAnchor="middle" className="text-xs fill-white font-medium">
+                            ${(processingData[idx].value / 1000).toFixed(1)}K
+                          </text>
+                          <text x="50" y="32" textAnchor="middle" className="text-xs fill-white opacity-80">
+                            May {processingData[idx].day}, 2022
+                          </text>
+                        </g>
+                      )}
+                    </g>
+                  );
+                })}
                 
                 {/* X-axis labels */}
                 {processingData.map((item, idx) => {
