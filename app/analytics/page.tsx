@@ -194,10 +194,10 @@ export default function AnalyticsPage() {
         </div>
 
         {/* Charts Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           {/* Processing Volume Chart */}
-          <div className="bg-white rounded-lg p-6 border border-gray-100">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Processing Volume</h2>
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+            <h2 className="text-base font-semibold text-slate-900 mb-4">Processing Volume</h2>
             <div className="h-48 flex items-end justify-between space-x-2">
               {(() => {
                 const maxProcessed = Math.max(...monthlyData.map(d => d.processed));
@@ -205,24 +205,47 @@ export default function AnalyticsPage() {
                   <div key={idx} className="flex-1 flex flex-col items-center">
                     <div className="w-full flex flex-col-reverse items-center space-y-reverse space-y-1">
                       <div
-                        className="w-full bg-blue-500 rounded-t hover:bg-blue-600 transition-colors cursor-pointer"
-                        style={{ height: `${(data.processed / maxProcessed) * 160}px` }}
+                        className="w-full rounded-t hover:opacity-80 transition-all cursor-pointer"
+                        style={{ 
+                          height: `${(data.processed / maxProcessed) * 160}px`,
+                          backgroundColor: '#7c3aed'
+                        }}
                         title={`${data.processed.toLocaleString()} processed`}
                       ></div>
                     </div>
-                    <span className="text-xs text-gray-600 mt-2">{data.month}</span>
-                    <span className="text-xs text-gray-400">{data.processed.toLocaleString()}</span>
+                    <span className="text-xs text-slate-600 mt-2">{data.month}</span>
+                    <span className="text-xs text-slate-500">{data.processed.toLocaleString()}</span>
                   </div>
                 ));
               })()}
             </div>
           </div>
 
-          {/* Success Rate Chart */}
-          <div className="bg-white rounded-lg p-6 border border-gray-100">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Success Rate Trend</h2>
-            <div className="h-48 relative">
-              <svg className="w-full h-full" viewBox="0 0 400 192">
+          {/* Success Rate Trend - Line Chart */}
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <p className="text-xs text-slate-500 mb-1">Success rate trend</p>
+                <div className="flex items-baseline">
+                  <p className="text-2xl font-bold text-slate-900">
+                    {(() => {
+                      const avgRate = monthlyData.reduce((sum, data) => sum + (data.success / data.processed) * 100, 0) / monthlyData.length;
+                      return avgRate.toFixed(1);
+                    })()}%
+                  </p>
+                  <div className="flex items-center ml-2">
+                    <svg className="w-3 h-3 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                    </svg>
+                    <span className="text-xs text-green-500 font-medium ml-1">2.3%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Chart */}
+            <div className="relative h-48 mt-6">
+              <svg className="w-full h-full" viewBox="0 0 600 192">
                 {(() => {
                   const successRates = monthlyData.map(data => (data.success / data.processed) * 100);
                   const minRate = Math.min(...successRates);
@@ -230,12 +253,12 @@ export default function AnalyticsPage() {
                   const range = maxRate - minRate || 1;
                   
                   const points = successRates.map((rate, idx) => ({
-                    x: 40 + (320 * idx) / (successRates.length - 1),
+                    x: 50 + (500 * idx) / (successRates.length - 1),
                     y: 160 - ((rate - minRate) / range) * 120,
                     rate: rate
                   }));
 
-                  // Generate smooth path
+                  // Generate smooth path like dashboard
                   let path = `M ${points[0].x} ${points[0].y}`;
                   for (let i = 1; i < points.length; i++) {
                     const prev = points[i - 1];
@@ -246,20 +269,29 @@ export default function AnalyticsPage() {
 
                   return (
                     <>
-                      {/* Grid lines */}
-                      <line x1="40" y1="40" x2="360" y2="40" stroke="#f1f5f9" strokeWidth="1" strokeDasharray="2 2" />
-                      <line x1="40" y1="100" x2="360" y2="100" stroke="#f1f5f9" strokeWidth="1" strokeDasharray="2 2" />
-                      <line x1="40" y1="160" x2="360" y2="160" stroke="#f1f5f9" strokeWidth="1" strokeDasharray="2 2" />
-                      
                       {/* Y-axis labels */}
-                      <text x="10" y="45" className="text-xs fill-gray-400">{maxRate.toFixed(1)}%</text>
-                      <text x="10" y="105" className="text-xs fill-gray-400">{((minRate + maxRate) / 2).toFixed(1)}%</text>
-                      <text x="10" y="165" className="text-xs fill-gray-400">{minRate.toFixed(1)}%</text>
+                      <text x="10" y="50" className="text-xs fill-slate-400">{maxRate.toFixed(1)}%</text>
+                      <text x="10" y="110" className="text-xs fill-slate-400">{((minRate + maxRate) / 2).toFixed(1)}%</text>
+                      <text x="10" y="170" className="text-xs fill-slate-400">{minRate.toFixed(1)}%</text>
                       
-                      {/* Line path */}
+                      {/* Grid lines */}
+                      <line x1="50" y1="40" x2="550" y2="40" stroke="#f1f5f9" strokeWidth="1" strokeDasharray="4 4" />
+                      <line x1="50" y1="100" x2="550" y2="100" stroke="#f1f5f9" strokeWidth="1" strokeDasharray="4 4" />
+                      <line x1="50" y1="160" x2="550" y2="160" stroke="#f1f5f9" strokeWidth="1" strokeDasharray="4 4" />
+                      
+                      {/* Reference line (dashed) */}
+                      <path
+                        d="M 50 120 Q 150 115, 250 118 Q 350 120, 450 115 Q 500 112, 550 110"
+                        stroke="#e2e8f0"
+                        strokeWidth="2"
+                        fill="none"
+                        strokeDasharray="6 6"
+                      />
+                      
+                      {/* Main curve */}
                       <path
                         d={path}
-                        stroke="#10b981"
+                        stroke="#000"
                         strokeWidth="2.5"
                         fill="none"
                         strokeLinecap="round"
@@ -268,29 +300,37 @@ export default function AnalyticsPage() {
                       
                       {/* Data points */}
                       {points.map((point, idx) => (
-                        <g key={idx}>
-                          <circle
-                            cx={point.x}
-                            cy={point.y}
-                            r="4"
-                            fill="#fff"
-                            stroke="#10b981"
-                            strokeWidth="2.5"
-                            className="hover:r-6 transition-all cursor-pointer"
-                          />
-                        </g>
+                        <circle
+                          key={idx}
+                          cx={point.x}
+                          cy={point.y}
+                          r="4"
+                          fill="#fff"
+                          stroke="#000"
+                          strokeWidth="2.5"
+                        />
                       ))}
+                      
+                      {/* Highlight point with tooltip */}
+                      <circle cx={points[Math.floor(points.length/2)].x} cy={points[Math.floor(points.length/2)].y} r="6" fill="#7c3aed" />
+                      <circle cx={points[Math.floor(points.length/2)].x} cy={points[Math.floor(points.length/2)].y} r="4" fill="#fff" />
+                      
+                      {/* Tooltip */}
+                      <g transform={`translate(${points[Math.floor(points.length/2)].x - 50}, ${points[Math.floor(points.length/2)].y - 50})`}>
+                        <rect x="0" y="0" width="100" height="40" rx="8" fill="#7c3aed" />
+                        <text x="50" y="18" textAnchor="middle" className="text-xs fill-white font-medium">
+                          {points[Math.floor(points.length/2)].rate.toFixed(1)}%
+                        </text>
+                        <text x="50" y="32" textAnchor="middle" className="text-xs fill-white opacity-80">
+                          {monthlyData[Math.floor(points.length/2)].month}
+                        </text>
+                      </g>
                       
                       {/* X-axis labels */}
                       {points.map((point, idx) => (
-                        <g key={idx}>
-                          <text x={point.x} y="180" textAnchor="middle" className="text-xs fill-gray-600">
-                            {monthlyData[idx].month}
-                          </text>
-                          <text x={point.x} y="192" textAnchor="middle" className="text-xs fill-gray-400">
-                            {point.rate.toFixed(1)}%
-                          </text>
-                        </g>
+                        <text key={idx} x={point.x} y="185" textAnchor="middle" className="text-xs fill-slate-400">
+                          {monthlyData[idx].month}
+                        </text>
                       ))}
                     </>
                   );
