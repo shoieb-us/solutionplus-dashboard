@@ -106,15 +106,16 @@ export default function Sidebar({ workflowCount = 0 }: SidebarProps = {}) {
 
   return (
     <aside
-      className={`fixed left-0 top-0 h-full bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 text-white transition-all duration-300 z-50 ${
+      className={`fixed left-0 top-0 h-full text-white transition-all duration-300 z-50 ${
         isCollapsed ? 'w-20' : 'w-64'
       }`}
+      style={{ background: 'linear-gradient(180deg, #0A0E27 0%, #060920 50%, #0A0E27 100%)' }}
     >
       {/* Logo Section */}
-      <div className="h-16 flex items-center justify-between px-4 border-b border-slate-700">
+      <div className="h-16 flex items-center justify-between px-4 border-b" style={{ borderColor: 'rgba(107, 70, 193, 0.3)' }}>
         {!isCollapsed && (
           <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center gradient-primary">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
@@ -124,7 +125,9 @@ export default function Sidebar({ workflowCount = 0 }: SidebarProps = {}) {
         )}
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="p-1.5 hover:bg-slate-700 rounded-lg transition-colors"
+          className="p-1.5 rounded-lg transition-colors"
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(107, 70, 193, 0.2)'}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
         >
           <svg
             className={`w-5 h-5 transition-transform ${isCollapsed ? 'rotate-180' : ''}`}
@@ -139,14 +142,14 @@ export default function Sidebar({ workflowCount = 0 }: SidebarProps = {}) {
 
       {/* User Profile */}
       {!isCollapsed && (
-        <div className="p-4 border-b border-slate-700">
+        <div className="p-4 border-b" style={{ borderColor: 'rgba(107, 70, 193, 0.3)' }}>
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-purple-500 rounded-full flex items-center justify-center text-sm font-bold">
+            <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold gradient-primary">
               JD
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate">John Doe</p>
-              <p className="text-xs text-slate-400 truncate">Finance Manager</p>
+              <p className="text-xs truncate" style={{ color: 'rgba(255, 255, 255, 0.6)' }}>Finance Manager</p>
             </div>
           </div>
         </div>
@@ -163,18 +166,20 @@ export default function Sidebar({ workflowCount = 0 }: SidebarProps = {}) {
                 onClick={() => router.push(item.path)}
                 className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all group cursor-pointer ${
                   isActive
-                    ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg'
-                    : 'text-slate-300 hover:bg-slate-700 hover:text-white'
+                    ? 'text-white shadow-lg gradient-primary'
+                    : 'text-white'
                 }`}
+                onMouseEnter={!isActive ? (e) => e.currentTarget.style.backgroundColor = 'rgba(107, 70, 193, 0.2)' : undefined}
+                onMouseLeave={!isActive ? (e) => e.currentTarget.style.backgroundColor = 'transparent' : undefined}
               >
-                <span className={isActive ? 'text-white' : 'text-slate-400 group-hover:text-white'}>
+                <span className={isActive ? 'text-white' : 'group-hover:text-white'} style={{ opacity: isActive ? 1 : 0.7 }}>
                   {item.icon}
                 </span>
                 {!isCollapsed && (
                   <>
                     <span className="flex-1 text-left text-sm font-medium">{item.name}</span>
                     {item.badge && (
-                      <span className="px-2 py-0.5 text-xs font-semibold bg-blue-500 text-white rounded-full">
+                      <span className="px-2 py-0.5 text-xs font-semibold text-white rounded-full" style={{ backgroundColor: '#8B5CF6' }}>
                         {item.badge}
                       </span>
                     )}
@@ -187,11 +192,20 @@ export default function Sidebar({ workflowCount = 0 }: SidebarProps = {}) {
       </nav>
 
       {/* Footer */}
-      <div className="p-4 border-t border-slate-700">
+      <div className="p-4 border-t" style={{ borderColor: 'rgba(107, 70, 193, 0.3)' }}>
         {!isCollapsed ? (
           <button
             onClick={() => router.push('/login')}
-            className="w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-slate-300 hover:bg-red-600 hover:text-white transition-all cursor-pointer"
+            className="w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-white transition-all"
+            style={{ opacity: 0.8 }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = '#dc2626';
+              e.currentTarget.style.opacity = '1';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+              e.currentTarget.style.opacity = '0.8';
+            }}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -201,7 +215,16 @@ export default function Sidebar({ workflowCount = 0 }: SidebarProps = {}) {
         ) : (
           <button
             onClick={() => router.push('/login')}
-            className="w-full flex justify-center p-2.5 rounded-lg text-slate-300 hover:bg-red-600 hover:text-white transition-all cursor-pointer"
+            className="w-full flex justify-center p-2.5 rounded-lg text-white transition-all"
+            style={{ opacity: 0.8 }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = '#dc2626';
+              e.currentTarget.style.opacity = '1';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+              e.currentTarget.style.opacity = '0.8';
+            }}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
