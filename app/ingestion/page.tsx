@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Sidebar from '../components/Sidebar';
 
 type IngestionMethod = 'pdf' | 'mongodb' | 'azure' | 'fusion' | null;
 
@@ -74,9 +75,12 @@ export default function IngestionPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm">
+    <div className="flex min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100">
+      <Sidebar />
+      
+      <main className="flex-1 ml-64">
+        {/* Header */}
+        <header className="bg-white shadow-sm border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div>
@@ -121,7 +125,7 @@ export default function IngestionPage() {
       </div>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Select Data Source</h2>
           <p className="text-gray-600">Choose how you want to ingest your invoice and purchase order data</p>
@@ -326,6 +330,7 @@ export default function IngestionPage() {
             )}
           </button>
         </div>
+      </div>
       </main>
     </div>
   );

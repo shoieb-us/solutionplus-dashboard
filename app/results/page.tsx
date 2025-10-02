@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Sidebar from '../components/Sidebar';
 
 export default function ResultsPage() {
   const router = useRouter();
@@ -92,8 +93,11 @@ export default function ResultsPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm">
+    <div className="flex min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100">
+      <Sidebar />
+      
+      <main className="flex-1 ml-64">
+        <header className="bg-white shadow-sm border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div>
@@ -141,7 +145,7 @@ export default function ResultsPage() {
         </div>
       </div>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Success Banner */}
         <div className="bg-gradient-to-r from-green-500 to-green-600 rounded-xl shadow-lg p-8 mb-8 text-white">
           <div className="flex items-center justify-between">
@@ -377,6 +381,7 @@ export default function ResultsPage() {
             Share Results
           </button>
         </div>
+      </div>
       </main>
     </div>
   );

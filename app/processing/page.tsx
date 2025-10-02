@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Sidebar from '../components/Sidebar';
 
 interface ProcessingItem {
   id: string;
@@ -155,8 +156,11 @@ export default function ProcessingPage() {
   const failedCount = items.filter(item => item.status === 'failed').length;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm">
+    <div className="flex min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100">
+      <Sidebar />
+      
+      <main className="flex-1 ml-64">
+        <header className="bg-white shadow-sm border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div>
@@ -200,7 +204,7 @@ export default function ProcessingPage() {
         </div>
       </div>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="bg-white rounded-xl shadow-lg p-8 mb-8">
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -371,6 +375,7 @@ export default function ProcessingPage() {
             View Results
           </button>
         </div>
+      </div>
       </main>
     </div>
   );
