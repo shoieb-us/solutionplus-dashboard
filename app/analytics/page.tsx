@@ -340,6 +340,227 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
+        {/* Pie Charts Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          {/* Sales Invoice Pie Chart */}
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+            <h2 className="text-base font-semibold text-slate-900 mb-4">Sales Invoice Categories</h2>
+            <div className="flex items-center justify-center mb-6">
+              <div className="relative w-48 h-48">
+                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 200 200">
+                  {/* Technology - 42% */}
+                  <circle
+                    cx="100"
+                    cy="100"
+                    r="80"
+                    fill="none"
+                    stroke="#7c3aed"
+                    strokeWidth="40"
+                    strokeDasharray="503"
+                    strokeDashoffset="292"
+                    strokeLinecap="round"
+                  />
+                  {/* Services - 28% */}
+                  <circle
+                    cx="100"
+                    cy="100"
+                    r="80"
+                    fill="none"
+                    stroke="#3b82f6"
+                    strokeWidth="40"
+                    strokeDasharray="503"
+                    strokeDashoffset="362"
+                    strokeLinecap="round"
+                    style={{ transform: 'rotate(151deg)', transformOrigin: '100px 100px' }}
+                  />
+                  {/* Products - 20% */}
+                  <circle
+                    cx="100"
+                    cy="100"
+                    r="80"
+                    fill="none"
+                    stroke="#10b981"
+                    strokeWidth="40"
+                    strokeDasharray="503"
+                    strokeDashoffset="402"
+                    strokeLinecap="round"
+                    style={{ transform: 'rotate(252deg)', transformOrigin: '100px 100px' }}
+                  />
+                  {/* Other - 10% */}
+                  <circle
+                    cx="100"
+                    cy="100"
+                    r="80"
+                    fill="none"
+                    stroke="#f59e0b"
+                    strokeWidth="40"
+                    strokeDasharray="503"
+                    strokeDashoffset="453"
+                    strokeLinecap="round"
+                    style={{ transform: 'rotate(324deg)', transformOrigin: '100px 100px' }}
+                  />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center flex-col">
+                  <p className="text-2xl font-bold text-slate-900">2,156</p>
+                  <p className="text-xs text-slate-500">Total</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 rounded-full bg-purple-600"></div>
+                  <span className="text-sm text-slate-700">Technology</span>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-slate-900">42%</p>
+                  <p className="text-xs text-slate-500">906</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                  <span className="text-sm text-slate-700">Services</span>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-slate-900">28%</p>
+                  <p className="text-xs text-slate-500">604</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                  <span className="text-sm text-slate-700">Products</span>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-slate-900">20%</p>
+                  <p className="text-xs text-slate-500">431</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 rounded-full bg-orange-500"></div>
+                  <span className="text-sm text-slate-700">Other</span>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-slate-900">10%</p>
+                  <p className="text-xs text-slate-500">215</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Purchase Invoice Pie Chart */}
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+            <h2 className="text-base font-semibold text-slate-900 mb-4">Purchase Invoice Categories</h2>
+            <div className="flex items-center justify-center mb-6">
+              <div className="relative w-48 h-48">
+                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 200 200">
+                  {/* Supplies - 35% */}
+                  <circle
+                    cx="100"
+                    cy="100"
+                    r="80"
+                    fill="none"
+                    stroke="#ef4444"
+                    strokeWidth="40"
+                    strokeDasharray="503"
+                    strokeDashoffset="327"
+                    strokeLinecap="round"
+                  />
+                  {/* Equipment - 30% */}
+                  <circle
+                    cx="100"
+                    cy="100"
+                    r="80"
+                    fill="none"
+                    stroke="#8b5cf6"
+                    strokeWidth="40"
+                    strokeDasharray="503"
+                    strokeDashoffset="352"
+                    strokeLinecap="round"
+                    style={{ transform: 'rotate(126deg)', transformOrigin: '100px 100px' }}
+                  />
+                  {/* Services - 25% */}
+                  <circle
+                    cx="100"
+                    cy="100"
+                    r="80"
+                    fill="none"
+                    stroke="#06b6d4"
+                    strokeWidth="40"
+                    strokeDasharray="503"
+                    strokeDashoffset="377"
+                    strokeLinecap="round"
+                    style={{ transform: 'rotate(234deg)', transformOrigin: '100px 100px' }}
+                  />
+                  {/* Other - 10% */}
+                  <circle
+                    cx="100"
+                    cy="100"
+                    r="80"
+                    fill="none"
+                    stroke="#84cc16"
+                    strokeWidth="40"
+                    strokeDasharray="503"
+                    strokeDashoffset="453"
+                    strokeLinecap="round"
+                    style={{ transform: 'rotate(324deg)', transformOrigin: '100px 100px' }}
+                  />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center flex-col">
+                  <p className="text-2xl font-bold text-slate-900">1,691</p>
+                  <p className="text-xs text-slate-500">Total</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                  <span className="text-sm text-slate-700">Supplies</span>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-slate-900">35%</p>
+                  <p className="text-xs text-slate-500">592</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 rounded-full bg-purple-500"></div>
+                  <span className="text-sm text-slate-700">Equipment</span>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-slate-900">30%</p>
+                  <p className="text-xs text-slate-500">507</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 rounded-full bg-cyan-500"></div>
+                  <span className="text-sm text-slate-700">Services</span>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-slate-900">25%</p>
+                  <p className="text-xs text-slate-500">423</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 rounded-full bg-lime-500"></div>
+                  <span className="text-sm text-slate-700">Other</span>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-slate-900">10%</p>
+                  <p className="text-xs text-slate-500">169</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Category Filter Tabs */}
         <div className="mb-6">
           <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg w-fit">
