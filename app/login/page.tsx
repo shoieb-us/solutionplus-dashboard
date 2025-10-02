@@ -12,7 +12,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
 
   const validateEmail = (email: string): boolean => {
-    return email.toLowerCase().endsWith("@solutionsplus.us.inc");
+    return email.toLowerCase().endsWith("solutionsplus@us.inc");
   };
 
   const handleEmailChange = (email: string) => {
