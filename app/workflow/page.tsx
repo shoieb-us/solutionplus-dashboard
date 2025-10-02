@@ -2,25 +2,124 @@
 
 import { useState } from 'react';
 import Sidebar from '../components/Sidebar';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
-type WorkflowStep = 'ingestion' | 'processing' | 'results';
-type IngestionMethod = 'pdf' | 'mongodb' | 'azure' | 'fusion' | null;
+type WorkflowStep = 'ingestion' | 'processing' | 'output' | 'delivery';
+type IngestionMethod = 'pdf' | 'email' | 'mongodb' | 'azure' | 'fusion' | 'excel' | null;
+
+interface FieldComparison {
+  field: string;
+  poValue: string;
+  invoiceValue: string;
+  match: boolean;
+}
+
+interface ProcessedResult {
+  id: number;
+  invoice: string;
+  po: string;
+  vendor: string;
+  amount: number;
+  status: 'success' | 'warning';
+  score: number;
+  fieldComparisons: FieldComparison[];
+  source: string;
+}
 
 export default function WorkflowPage() {
   const [currentStep, setCurrentStep] = useState<WorkflowStep>('ingestion');
   const [selectedMethod, setSelectedMethod] = useState<IngestionMethod>(null);
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
+  const [excelData, setExcelData] = useState<{invoices: any[], purchaseOrders: any[]} | null>(null);
+  const [pdfData, setPdfData] = useState<{invoices: any[], purchaseOrders: any[]} | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [processedResults, setProcessedResults] = useState<any[]>([]);
+  const [processedResults, setProcessedResults] = useState<ProcessedResult[]>([]);
+  const [selectedResult, setSelectedResult] = useState<ProcessedResult | null>(null);
+  const [showModal, setShowModal] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
+  const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(5);
+  
+  // Email form state
+  const [emailForm, setEmailForm] = useState({
+    email: '',
+    server: '',
+    port: '',
+    folder: ''
+  });
+  const [emailErrors, setEmailErrors] = useState({
+    email: '',
+    server: '',
+    port: '',
+    folder: ''
+  });
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  
+  // Database form state
+  const [dbForm, setDbForm] = useState({
+    connectionString: ''
+  });
+  const [dbErrors, setDbErrors] = useState({
+    connectionString: ''
+  });
+
+  // Azure form state
+  const [azureForm, setAzureForm] = useState({
+    accountName: '',
+    accessKey: '',
+    containerName: ''
+  });
+  const [azureErrors, setAzureErrors] = useState({
+    accountName: '',
+    accessKey: '',
+    containerName: ''
+  });
+
+  // Fusion form state
+  const [fusionForm, setFusionForm] = useState({
+    instanceUrl: '',
+    username: '',
+    password: '',
+    apiVersion: 'v1'
+  });
+  const [fusionErrors, setFusionErrors] = useState({
+    instanceUrl: '',
+    username: '',
+    password: ''
+  });
+
 
   const ingestionMethods = [
+    {
+      id: 'excel',
+      name: 'Excel Upload',
+      description: 'Upload Excel sheets',
+      icon: '📊',
+      color: 'from-emerald-500 to-teal-600'
+    },
     {
       id: 'pdf',
       name: 'PDF Upload',
       description: 'Upload invoice and PO documents',
       icon: '📄',
       color: 'from-red-500 to-red-600'
+    },
+    {
+      id: 'email',
+      name: 'Email Integration',
+      description: 'Auto-forwarded invoices',
+      icon: '📧',
+      color: 'from-orange-500 to-orange-600'
     },
     {
       id: 'mongodb',
@@ -49,35 +148,363 @@ export default function WorkflowPage() {
     const files = e.target.files;
     if (files) {
       const fileNames = Array.from(files).map(f => f.name);
-      setUploadedFiles(prev => [...prev, ...fileNames]);
+      setUploadedFiles(fileNames);
+      
+      // Simulate PDF data extraction (in production, this would use OCR/AI)
+      // For demo purposes, we'll generate sample data based on uploaded files
+      const invoiceCount = Math.ceil(files.length / 2);
+      const poCount = files.length - invoiceCount;
+      
+      const sampleInvoices = Array.from({ length: invoiceCount }, (_, i) => ({
+        invoiceNumber: `INV-PDF-${String(i + 1).padStart(3, '0')}`,
+        poNumber: `PO-PDF-${String(i + 1).padStart(3, '0')}`,
+        vendorName: ['Acme Corp', 'Tech Solutions', 'Office Supplies Inc', 'Global Trading'][i % 4],
+        invoiceDate: '2024-02-15',
+        totalAmount: (Math.random() * 50000 + 5000).toFixed(2),
+        currency: 'USD',
+        paymentTerms: ['Net 30', 'Net 45', 'Net 60'][i % 3],
+        shippingAddress: '123 Business St',
+        taxAmount: ((Math.random() * 5000 + 500)).toFixed(2),
+      }));
+
+      const samplePOs = Array.from({ length: poCount }, (_, i) => ({
+        poNumber: `PO-PDF-${String(i + 1).padStart(3, '0')}`,
+        vendorName: ['Acme Corp', 'Tech Solutions', 'Office Supplies Inc', 'Global Trading'][i % 4],
+        date: '2024-02-15',
+        totalAmount: parseFloat(sampleInvoices[i]?.totalAmount || (Math.random() * 50000 + 5000).toFixed(2)),
+        currency: 'USD',
+        paymentTerms: i % 2 === 0 ? 'Net 30' : sampleInvoices[i]?.paymentTerms || 'Net 45',
+        shippingAddress: '123 Business St',
+        taxAmount: parseFloat(sampleInvoices[i]?.taxAmount || (Math.random() * 5000 + 500).toFixed(2)),
+      }));
+
+      setPdfData({ invoices: sampleInvoices, purchaseOrders: samplePOs });
+      setToastType('success');
+      setToastMessage(`Extracted ${invoiceCount} invoices and ${poCount} POs from ${files.length} PDF files`);
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
     }
   };
 
-  const startProcessing = () => {
+  const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+    setUploadedFiles([file.name]);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = event.target?.result;
+        const workbook = XLSX.read(data, { type: 'binary' });
+        
+        // Assume first sheet is invoices, second is purchase orders
+        const invoiceSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const poSheet = workbook.Sheets[workbook.SheetNames[1]];
+        
+        const invoices = XLSX.utils.sheet_to_json(invoiceSheet);
+        const purchaseOrders = XLSX.utils.sheet_to_json(poSheet);
+        
+        setExcelData({ invoices, purchaseOrders });
+        setToastType('success');
+        setToastMessage(`Loaded ${invoices.length} invoices and ${purchaseOrders.length} POs from Excel`);
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 2000);
+      } catch (error: any) {
+        setToastType('error');
+        setToastMessage('Failed to parse Excel file. Ensure it has two sheets: Invoices and Purchase Orders');
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 3000);
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const startProcessing = async () => {
     setCurrentStep('processing');
     setIsProcessing(true);
     setProgress(0);
 
-    // Simulate processing
-    const interval = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
+    // If PDF is selected, use uploaded PDF data
+    if (selectedMethod === 'pdf' && pdfData) {
+      try {
+        const progressInterval = setInterval(() => {
+          setProgress(prev => Math.min(prev + 5, 90));
+        }, 200);
+
+        // Process PDF data
+        const { invoices, purchaseOrders } = pdfData;
+        
+        // Match invoices with POs
+        const results: ProcessedResult[] = invoices.map((invoice: any, index: number) => {
+          const matchingPO = purchaseOrders.find((po: any) => 
+            po.poNumber === invoice.poNumber
+          );
+          
+          if (!matchingPO) {
+            return null;
+          }
+
+          const matchResult = matchInvoiceWithPO(invoice, matchingPO);
+
+          return {
+            id: index + 1,
+            invoice: invoice.invoiceNumber,
+            po: invoice.poNumber,
+            vendor: invoice.vendorName,
+            amount: parseFloat(invoice.totalAmount),
+            status: matchResult.status,
+            score: matchResult.score,
+            fieldComparisons: matchResult.comparisons,
+            source: 'PDF Upload'
+          };
+        }).filter((result): result is ProcessedResult => result !== null);
+
+        clearInterval(progressInterval);
+        setProgress(100);
+        setTimeout(() => {
           setIsProcessing(false);
-          setCurrentStep('results');
-          // Generate mock results
-          setProcessedResults([
-            { id: 1, invoice: 'INV-2024-001', po: 'PO-2024-156', vendor: 'TechSupply Corp', amount: 15750, status: 'success', score: 98 },
-            { id: 2, invoice: 'INV-2024-002', po: 'PO-2024-157', vendor: 'Office Solutions', amount: 8450, status: 'success', score: 95 },
-            { id: 3, invoice: 'INV-2024-003', po: 'PO-2024-158', vendor: 'Digital Systems', amount: 23200, status: 'success', score: 97 },
-            { id: 4, invoice: 'INV-2024-004', po: 'PO-2024-159', vendor: 'Global Trading', amount: 12890, status: 'warning', score: 67 },
-            { id: 5, invoice: 'INV-2024-005', po: 'PO-2024-160', vendor: 'Enterprise Hardware', amount: 45600, status: 'success', score: 99 }
+          setProcessedResults(results);
+          setCurrentStep('output');
+        }, 500);
+      } catch (error: any) {
+        setIsProcessing(false);
+        setToastType('error');
+        setToastMessage(error.message || 'Error processing PDF data');
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 2000);
+        setCurrentStep('ingestion');
+      }
+    }
+    // If Excel is selected, use uploaded Excel data
+    else if (selectedMethod === 'excel' && excelData) {
+      try {
+        const progressInterval = setInterval(() => {
+          setProgress(prev => Math.min(prev + 5, 90));
+        }, 200);
+
+        // Process Excel data
+        const { invoices, purchaseOrders } = excelData;
+        
+        // Match invoices with POs
+        const results: ProcessedResult[] = invoices.map((invoice: any, index: number) => {
+          const matchingPO = purchaseOrders.find((po: any) => 
+            po['PO Number'] === invoice['PO Number'] || po.poNumber === invoice.poNumber
+          );
+          
+          if (!matchingPO) {
+            return null;
+          }
+
+          const matchResult = matchInvoiceWithPO(invoice, matchingPO);
+
+          return {
+            id: index + 1,
+            invoice: invoice['Invoice Number'] || invoice.invoiceNumber,
+            po: invoice['PO Number'] || invoice.poNumber,
+            vendor: invoice['Vendor Name'] || invoice.vendorName,
+            amount: invoice['Total Amount'] || invoice.totalAmount,
+            status: matchResult.status,
+            score: matchResult.score,
+            fieldComparisons: matchResult.comparisons,
+            source: 'Excel Upload'
+          };
+        }).filter((result): result is ProcessedResult => result !== null);
+
+        clearInterval(progressInterval);
+        setProgress(100);
+        setTimeout(() => {
+          setIsProcessing(false);
+          setProcessedResults(results);
+          setCurrentStep('output');
+        }, 500);
+      } catch (error: any) {
+        setIsProcessing(false);
+        setToastType('error');
+        setToastMessage(error.message || 'Error processing Excel data');
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 2000);
+        setCurrentStep('ingestion');
+      }
+    }
+    // If MongoDB is selected, fetch real data
+    else if (selectedMethod === 'mongodb' || selectedMethod === 'azure' || selectedMethod === 'fusion') {
+      try {
+        // Simulate progress while fetching
+        const progressInterval = setInterval(() => {
+          setProgress(prev => Math.min(prev + 5, 90));
+        }, 200);
+
+        const response = await fetch('/api/mongodb/invoices');
+        const data = await response.json();
+
+        clearInterval(progressInterval);
+
+        if (data.success && data.data) {
+          const { invoices, purchaseOrders } = data.data;
+          
+          // Match invoices with POs
+          const results: ProcessedResult[] = invoices.map((invoice: any, index: number) => {
+            const matchingPO = purchaseOrders.find((po: any) => po.poNumber === invoice.poNumber);
+            
+            if (!matchingPO) {
+              return null;
+            }
+
+            const matchResult = matchInvoiceWithPO(invoice, matchingPO);
+
+            return {
+              id: index + 1,
+              invoice: invoice.invoiceNumber,
+              po: invoice.poNumber,
+              vendor: invoice.vendorName,
+              amount: invoice.totalAmount,
+              status: matchResult.status,
+              score: matchResult.score,
+              fieldComparisons: matchResult.comparisons,
+              source: selectedMethod === 'mongodb' ? 'MongoDB' : selectedMethod === 'azure' ? 'Azure Storage' : 'Fusion ERM'
+            };
+          }).filter(Boolean);
+
+          setProgress(100);
+          setTimeout(() => {
+            setIsProcessing(false);
+            setProcessedResults(results);
+            setCurrentStep('output');
+          }, 500);
+        } else {
+          throw new Error('Failed to fetch data from MongoDB');
+        }
+      } catch (error: any) {
+        setIsProcessing(false);
+        setToastType('error');
+        setToastMessage(error.message || 'Error processing data');
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 2000);
+        setCurrentStep('ingestion');
+      }
+    } else {
+      // For other methods, use simulated data
+      const interval = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 100) {
+            clearInterval(interval);
+            setIsProcessing(false);
+            // Generate mock results
+            setProcessedResults([
+            { 
+              id: 1, 
+              invoice: 'INV-2024-001', 
+              po: 'PO-2024-156', 
+              vendor: 'TechSupply Corp', 
+              amount: 15750, 
+              status: 'success', 
+              score: 98,
+              source: 'Email Integration',
+              fieldComparisons: [
+                { field: 'PO Number', poValue: 'PO-2024-156', invoiceValue: 'PO-2024-156', match: true },
+                { field: 'Vendor Name', poValue: 'TechSupply Corp', invoiceValue: 'TechSupply Corp', match: true },
+                { field: 'Invoice Date', poValue: '2024-01-15', invoiceValue: '2024-01-15', match: true },
+                { field: 'Total Amount', poValue: '$15,750.00', invoiceValue: '$15,750.00', match: true },
+                { field: 'Currency', poValue: 'USD', invoiceValue: 'USD', match: true },
+                { field: 'Payment Terms', poValue: 'Net 30', invoiceValue: 'Net 30', match: true },
+                { field: 'Shipping Address', poValue: '123 Main St, NY', invoiceValue: '123 Main St, NY', match: true },
+                { field: 'Tax Amount', poValue: '$1,575.00', invoiceValue: '$1,575.00', match: true }
+              ]
+            },
+            { 
+              id: 2, 
+              invoice: 'INV-2024-002', 
+              po: 'PO-2024-157', 
+              vendor: 'Office Solutions', 
+              amount: 8450, 
+              status: 'success', 
+              score: 95,
+              source: 'Email Integration',
+              fieldComparisons: [
+                { field: 'PO Number', poValue: 'PO-2024-157', invoiceValue: 'PO-2024-157', match: true },
+                { field: 'Vendor Name', poValue: 'Office Solutions', invoiceValue: 'Office Solutions', match: true },
+                { field: 'Invoice Date', poValue: '2024-01-18', invoiceValue: '2024-01-18', match: true },
+                { field: 'Total Amount', poValue: '$8,450.00', invoiceValue: '$8,450.00', match: true },
+                { field: 'Currency', poValue: 'USD', invoiceValue: 'USD', match: true },
+                { field: 'Payment Terms', poValue: 'Net 45', invoiceValue: 'Net 30', match: false },
+                { field: 'Shipping Address', poValue: '456 Oak Ave, CA', invoiceValue: '456 Oak Ave, CA', match: true },
+                { field: 'Tax Amount', poValue: '$845.00', invoiceValue: '$845.00', match: true }
+              ]
+            },
+            { 
+              id: 3, 
+              invoice: 'INV-2024-003', 
+              po: 'PO-2024-158', 
+              vendor: 'Digital Systems', 
+              amount: 23200, 
+              status: 'success', 
+              score: 97,
+              source: 'Email Integration',
+              fieldComparisons: [
+                { field: 'PO Number', poValue: 'PO-2024-158', invoiceValue: 'PO-2024-158', match: true },
+                { field: 'Vendor Name', poValue: 'Digital Systems', invoiceValue: 'Digital Systems', match: true },
+                { field: 'Invoice Date', poValue: '2024-01-20', invoiceValue: '2024-01-20', match: true },
+                { field: 'Total Amount', poValue: '$23,200.00', invoiceValue: '$23,200.00', match: true },
+                { field: 'Currency', poValue: 'USD', invoiceValue: 'USD', match: true },
+                { field: 'Payment Terms', poValue: 'Net 60', invoiceValue: 'Net 60', match: true },
+                { field: 'Shipping Address', poValue: '789 Pine Rd, TX', invoiceValue: '789 Pine Rd, TX', match: true },
+                { field: 'Tax Amount', poValue: '$2,320.00', invoiceValue: '$2,320.00', match: true }
+              ]
+            },
+            { 
+              id: 4, 
+              invoice: 'INV-2024-004', 
+              po: 'PO-2024-159', 
+              vendor: 'Global Trading', 
+              amount: 12890, 
+              status: 'warning', 
+              score: 67,
+              source: 'Email Integration',
+              fieldComparisons: [
+                { field: 'PO Number', poValue: 'PO-2024-159', invoiceValue: 'PO-2024-159', match: true },
+                { field: 'Vendor Name', poValue: 'Global Trading', invoiceValue: 'Global Trading Co', match: false },
+                { field: 'Invoice Date', poValue: '2024-01-22', invoiceValue: '2024-01-25', match: false },
+                { field: 'Total Amount', poValue: '$12,890.00', invoiceValue: '$12,990.00', match: false },
+                { field: 'Currency', poValue: 'USD', invoiceValue: 'USD', match: true },
+                { field: 'Payment Terms', poValue: 'Net 30', invoiceValue: 'Net 45', match: false },
+                { field: 'Shipping Address', poValue: '321 Elm St, FL', invoiceValue: '321 Elm Street, FL', match: false },
+                { field: 'Tax Amount', poValue: '$1,289.00', invoiceValue: '$1,299.00', match: false }
+              ]
+            },
+            { 
+              id: 5, 
+              invoice: 'INV-2024-005', 
+              po: 'PO-2024-160', 
+              vendor: 'Enterprise Hardware', 
+              amount: 45600, 
+              status: 'success', 
+              score: 99,
+              source: 'Email Integration',
+              fieldComparisons: [
+                { field: 'PO Number', poValue: 'PO-2024-160', invoiceValue: 'PO-2024-160', match: true },
+                { field: 'Vendor Name', poValue: 'Enterprise Hardware', invoiceValue: 'Enterprise Hardware', match: true },
+                { field: 'Invoice Date', poValue: '2024-01-28', invoiceValue: '2024-01-28', match: true },
+                { field: 'Total Amount', poValue: '$45,600.00', invoiceValue: '$45,600.00', match: true },
+                { field: 'Currency', poValue: 'USD', invoiceValue: 'USD', match: true },
+                { field: 'Payment Terms', poValue: 'Net 30', invoiceValue: 'Net 30', match: true },
+                { field: 'Shipping Address', poValue: '555 Tech Blvd, WA', invoiceValue: '555 Tech Blvd, WA', match: true },
+                { field: 'Tax Amount', poValue: '$4,560.00', invoiceValue: '$4,560.00', match: true }
+              ]
+            }
           ]);
+          setCurrentStep('output');
           return 100;
         }
         return prev + 2;
       });
     }, 50);
+    }
+  };
+
+  const moveToDelivery = () => {
+    setCurrentStep('delivery');
   };
 
   const resetWorkflow = () => {
@@ -87,11 +514,703 @@ export default function WorkflowPage() {
     setIsProcessing(false);
     setProgress(0);
     setProcessedResults([]);
+    setSelectedResult(null);
+    setShowModal(false);
+    setCurrentPage(1);
+  };
+
+  // Pagination calculations
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentResults = processedResults.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(processedResults.length / itemsPerPage);
+
+  const goToPage = (pageNumber: number) => {
+    setCurrentPage(pageNumber);
+  };
+
+  const goToPreviousPage = () => {
+    setCurrentPage(prev => Math.max(prev - 1, 1));
+  };
+
+  const goToNextPage = () => {
+    setCurrentPage(prev => Math.min(prev + 1, totalPages));
+  };
+
+  const openComparisonModal = (result: ProcessedResult) => {
+    setSelectedResult(result);
+    setShowModal(true);
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    setSelectedResult(null);
+  };
+
+  const handleManualReview = () => {
+    if (selectedResult) {
+      setToastType('success');
+      setToastMessage(`Manual review requested for ${selectedResult.invoice}`);
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+      closeModal();
+    }
+  };
+
+  // Delivery Layer handlers
+  const handleExportToERP = () => {
+    setToastType('success');
+    setToastMessage(`Exporting ${processedResults.length} invoices to ERP system...`);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3000);
+  };
+
+  const handleGenerateReports = () => {
+    const timestamp = new Date().toISOString().split('T')[0];
+    
+    // Create Excel export with detailed information
+    const ws_data = [
+      ['Invoice Number', 'PO Number', 'Vendor', 'Amount', 'Source', 'Score', 'Status', 'Issues'],
+      ...processedResults.map(r => {
+        const issues = r.status === 'warning' 
+          ? r.fieldComparisons
+              .filter(fc => !fc.match)
+              .map(fc => `${fc.field}: PO="${fc.poValue}" vs Invoice="${fc.invoiceValue}"`)
+              .join('; ')
+          : 'None - All fields validated';
+        
+        return [r.invoice, r.po, r.vendor, r.amount, r.source, r.score + '%', r.status === 'success' ? 'Matched' : 'Review Required', issues];
+      })
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(ws_data);
+    
+    // Set column widths
+    ws['!cols'] = [
+      { wch: 15 }, // Invoice Number
+      { wch: 15 }, // PO Number
+      { wch: 30 }, // Vendor
+      { wch: 12 }, // Amount
+      { wch: 15 }, // Source
+      { wch: 8 },  // Score
+      { wch: 15 }, // Status
+      { wch: 60 }  // Issues
+    ];
+    
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Invoice Validation Report');
+    XLSX.writeFile(wb, `Invoice_Validation_Report_${timestamp}.xlsx`);
+    
+    // Create PDF export
+    const doc = new jsPDF();
+    
+    // Add title
+    doc.setFontSize(20);
+    doc.setTextColor(30, 58, 138); // Blue color
+    doc.text('Invoice Validation Report', 14, 20);
+    
+    // Add date
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 14, 28);
+    
+    // Add summary statistics
+    doc.setFontSize(12);
+    doc.setTextColor(0, 0, 0);
+    doc.text('Summary Statistics', 14, 38);
+    doc.setFontSize(10);
+    doc.text(`Total Invoices: ${processedResults.length}`, 14, 45);
+    doc.text(`Successfully Matched: ${processedResults.filter(r => r.status === 'success').length}`, 14, 52);
+    doc.text(`Requires Review: ${processedResults.filter(r => r.status === 'warning').length}`, 14, 59);
+    doc.text(`Success Rate: ${Math.round((processedResults.filter(r => r.status === 'success').length / processedResults.length) * 100)}%`, 14, 66);
+    
+    // Add table
+    autoTable(doc, {
+      startY: 75,
+      head: [['Invoice', 'PO', 'Vendor', 'Amount', 'Source', 'Score', 'Status']],
+      body: processedResults.map(r => [
+        r.invoice,
+        r.po,
+        r.vendor,
+        `$${r.amount.toLocaleString()}`,
+        r.source,
+        `${r.score}%`,
+        r.status === 'success' ? 'Matched' : 'Review Required'
+      ]),
+      theme: 'striped',
+      headStyles: { fillColor: [30, 58, 138] },
+      styles: { fontSize: 8 },
+      columnStyles: {
+        3: { halign: 'right' },
+        4: { halign: 'left' },
+        5: { halign: 'center' },
+        6: { halign: 'center' }
+      }
+    });
+    
+    // Add detailed issues on new pages if there are warnings
+    const warningResults = processedResults.filter(r => r.status === 'warning');
+    if (warningResults.length > 0) {
+      doc.addPage();
+      doc.setFontSize(16);
+      doc.setTextColor(30, 58, 138);
+      doc.text('Detailed Mismatch Analysis', 14, 20);
+      
+      let yPos = 35;
+      warningResults.forEach((result, index) => {
+        if (yPos > 250) {
+          doc.addPage();
+          yPos = 20;
+        }
+        
+        doc.setFontSize(12);
+        doc.setTextColor(0, 0, 0);
+        doc.text(`${index + 1}. Invoice ${result.invoice} - Score: ${result.score}%`, 14, yPos);
+        yPos += 7;
+        
+        doc.setFontSize(10);
+        doc.setTextColor(100, 100, 100);
+        doc.text(`PO: ${result.po} | Vendor: ${result.vendor}`, 14, yPos);
+        yPos += 10;
+        
+        const mismatches = result.fieldComparisons.filter(fc => !fc.match);
+        mismatches.forEach((mismatch, idx) => {
+          if (yPos > 270) {
+            doc.addPage();
+            yPos = 20;
+          }
+          
+          doc.setFontSize(9);
+          doc.setTextColor(220, 38, 38); // Red color
+          doc.text(`• ${mismatch.field}:`, 18, yPos);
+          yPos += 5;
+          doc.setTextColor(100, 100, 100);
+          doc.text(`  PO: ${mismatch.poValue}`, 20, yPos);
+          yPos += 5;
+          doc.text(`  Invoice: ${mismatch.invoiceValue}`, 20, yPos);
+          yPos += 7;
+        });
+        
+        yPos += 5;
+      });
+    }
+    
+    doc.save(`Invoice_Validation_Report_${timestamp}.pdf`);
+    
+    setToastType('success');
+    setToastMessage('PDF and Excel reports downloaded successfully!');
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3000);
+  };
+
+  const handleEmailNotifications = () => {
+    setToastType('success');
+    setToastMessage('Email notification configuration opened');
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3000);
+  };
+
+  const handleConfigureWebhook = () => {
+    setToastType('success');
+    setToastMessage('REST API Webhook configuration opened');
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3000);
+  };
+
+  const handleDatabaseSync = () => {
+    setToastType('success');
+    setToastMessage('Database sync configuration opened');
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3000);
+  };
+
+  const handleScheduleDelivery = () => {
+    setToastType('success');
+    setToastMessage('Delivery scheduled for next business day');
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3000);
+  };
+
+  const handleSubmitAndDeliver = () => {
+    // Save to localStorage with timestamp and unique IDs
+    const savedWorkflows = localStorage.getItem('processedWorkflows');
+    const existingWorkflows = savedWorkflows ? JSON.parse(savedWorkflows) : [];
+    
+    const timestamp = new Date().toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    
+    // Generate unique IDs based on existing workflows count
+    const startingId = existingWorkflows.length;
+    const workflowsWithDate = processedResults.map((result, index) => ({
+      ...result,
+      id: startingId + index + 1,
+      processedDate: timestamp
+    }));
+    
+    localStorage.setItem('processedWorkflows', JSON.stringify([...workflowsWithDate, ...existingWorkflows]));
+    
+    setToastType('success');
+    setToastMessage(`Successfully submitted ${processedResults.length} validated invoices!`);
+    setShowToast(true);
+    setTimeout(() => {
+      setShowToast(false);
+      resetWorkflow();
+    }, 3000);
+  };
+
+  const validateEmail = (email: string) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  const validateEmailForm = () => {
+    const errors = {
+      email: '',
+      server: '',
+      port: '',
+      folder: ''
+    };
+    let isValid = true;
+
+    if (!emailForm.email) {
+      errors.email = 'Please enter your email address';
+      isValid = false;
+    } else if (!validateEmail(emailForm.email)) {
+      errors.email = 'Please enter a valid email address (e.g., invoices@company.com)';
+      isValid = false;
+    }
+
+    if (!emailForm.server) {
+      errors.server = 'Please enter your email server address (e.g., imap.gmail.com)';
+      isValid = false;
+    }
+
+    if (!emailForm.port) {
+      errors.port = 'Please enter the IMAP port number (usually 993 for SSL)';
+      isValid = false;
+    } else if (isNaN(Number(emailForm.port)) || Number(emailForm.port) < 1 || Number(emailForm.port) > 65535) {
+      errors.port = 'Port must be a valid number between 1 and 65535';
+      isValid = false;
+    }
+
+    if (!emailForm.folder) {
+      errors.folder = 'Please enter the folder name (e.g., INBOX)';
+      isValid = false;
+    }
+
+    setEmailErrors(errors);
+    return isValid;
+  };
+
+  const handleTestEmailConnection = () => {
+    if (!validateEmailForm()) {
+      setToastType('error');
+      setToastMessage('Please fix validation errors');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+      return;
+    }
+
+    setIsTestingConnection(true);
+    setConnectionStatus('idle');
+    
+    // Simulate API call
+    setTimeout(() => {
+      setIsTestingConnection(false);
+      setConnectionStatus('success');
+      setToastType('success');
+      setToastMessage('Email connection successful! Opening inbox...');
+      setShowToast(true);
+      setTimeout(() => {
+        setShowToast(false);
+        setConnectionStatus('idle');
+        // Open email selection modal
+        setShowEmailModal(true);
+      }, 1500);
+    }, 2000);
+  };
+
+  // Simulated email inbox data
+  const emailInbox = [
+    {
+      id: 'email-1',
+      from: 'invoices@seashell.ae',
+      subject: '[Auto-Forwarded] Invoice INV-2024-001 - Sea Shell',
+      date: '2024-02-20 10:30 AM',
+      hasAttachment: true,
+      isAutoForwarded: true,
+      matchesCriteria: true,
+      preview: 'Invoice for maintenance services - Amount: AED 15,750.00'
+    },
+    {
+      id: 'email-2',
+      from: 'billing@etisalat.ae',
+      subject: '[Auto-Forwarded] Monthly Invoice - Etisalat Services',
+      date: '2024-02-20 09:15 AM',
+      hasAttachment: true,
+      isAutoForwarded: true,
+      matchesCriteria: true,
+      preview: 'Telecommunications invoice - Amount: AED 8,450.00'
+    },
+    {
+      id: 'email-3',
+      from: 'accounts@adnoc.ae',
+      subject: '[Auto-Forwarded] INV-2024-003 - ADNOC Supply',
+      date: '2024-02-19 02:45 PM',
+      hasAttachment: true,
+      isAutoForwarded: true,
+      matchesCriteria: true,
+      preview: 'Fuel and energy supply invoice - Amount: AED 23,200.00'
+    },
+    {
+      id: 'email-4',
+      from: 'newsletter@company.com',
+      subject: 'Weekly Newsletter - Company Updates',
+      date: '2024-02-19 01:20 PM',
+      hasAttachment: false,
+      isAutoForwarded: false,
+      matchesCriteria: false,
+      preview: 'This week in company news...'
+    },
+    {
+      id: 'email-5',
+      from: 'support@vendor.com',
+      subject: 'Re: Support Ticket #12345',
+      date: '2024-02-18 04:30 PM',
+      hasAttachment: false,
+      isAutoForwarded: false,
+      matchesCriteria: false,
+      preview: 'Your support ticket has been resolved...'
+    },
+    {
+      id: 'email-6',
+      from: 'invoices@mdcadnoc.ae',
+      subject: '[Auto-Forwarded] Invoice - MDC Business Management',
+      date: '2024-02-18 11:00 AM',
+      hasAttachment: true,
+      isAutoForwarded: true,
+      matchesCriteria: true,
+      preview: 'Facility management services - Amount: AED 12,890.00'
+    },
+    {
+      id: 'email-7',
+      from: 'marketing@ads.com',
+      subject: 'Special Offer Just For You!',
+      date: '2024-02-17 03:15 PM',
+      hasAttachment: false,
+      isAutoForwarded: false,
+      matchesCriteria: false,
+      preview: 'Limited time offer...'
+    }
+  ];
+
+  const handleEmailSelect = (emailId: string) => {
+    const email = emailInbox.find(e => e.id === emailId);
+    if (email && email.matchesCriteria) {
+      setSelectedEmailId(emailId);
+      setShowEmailModal(false);
+      
+      // Show processing toast
+      setToastType('success');
+      setToastMessage(`Extracting invoice data from email: ${email.subject}`);
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+      
+      // Continue to processing
+      setTimeout(() => {
+        startProcessing();
+      }, 2500);
+    }
+  };
+
+  const validateDbForm = () => {
+    const errors = {
+      connectionString: ''
+    };
+    let isValid = true;
+
+    if (!dbForm.connectionString) {
+      errors.connectionString = 'MongoDB connection string is required';
+      isValid = false;
+    } else if (dbForm.connectionString.length < 15) {
+      errors.connectionString = 'Connection string appears too short. Use format: mongodb://host:port';
+      isValid = false;
+    } else if (!dbForm.connectionString.startsWith('mongodb://') && !dbForm.connectionString.startsWith('mongodb+srv://')) {
+      errors.connectionString = 'Connection string must start with mongodb:// or mongodb+srv://';
+      isValid = false;
+    }
+
+    setDbErrors(errors);
+    return isValid;
+  };
+
+  const validateAzureForm = () => {
+    const errors = {
+      accountName: '',
+      accessKey: '',
+      containerName: ''
+    };
+    let isValid = true;
+
+    if (!azureForm.accountName) {
+      errors.accountName = 'Storage account name is required';
+      isValid = false;
+    }
+
+    if (!azureForm.accessKey) {
+      errors.accessKey = 'Access key is required';
+      isValid = false;
+    } else if (azureForm.accessKey.length < 20) {
+      errors.accessKey = 'Access key appears too short';
+      isValid = false;
+    }
+
+    if (!azureForm.containerName) {
+      errors.containerName = 'Container name is required';
+      isValid = false;
+    }
+
+    setAzureErrors(errors);
+    return isValid;
+  };
+
+  const handleTestAzureConnection = () => {
+    if (!validateAzureForm()) {
+      setToastType('error');
+      setToastMessage('Please fill in all required fields');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+      return;
+    }
+
+    setIsTestingConnection(true);
+    setConnectionStatus('idle');
+    
+    // Simulate Azure connection test
+    setTimeout(() => {
+      setIsTestingConnection(false);
+      setConnectionStatus('success');
+      setToastType('success');
+      setToastMessage('Azure Storage connection successful!');
+      setShowToast(true);
+      setTimeout(() => {
+        setShowToast(false);
+        setConnectionStatus('idle');
+      }, 2000);
+    }, 2000);
+  };
+
+  const validateFusionForm = () => {
+    const errors = {
+      instanceUrl: '',
+      username: '',
+      password: ''
+    };
+    let isValid = true;
+
+    if (!fusionForm.instanceUrl) {
+      errors.instanceUrl = 'Instance URL is required';
+      isValid = false;
+    } else if (!fusionForm.instanceUrl.startsWith('https://')) {
+      errors.instanceUrl = 'Instance URL must start with https://';
+      isValid = false;
+    }
+
+    if (!fusionForm.username) {
+      errors.username = 'Username is required';
+      isValid = false;
+    }
+
+    if (!fusionForm.password) {
+      errors.password = 'Password is required';
+      isValid = false;
+    }
+
+    setFusionErrors(errors);
+    return isValid;
+  };
+
+  const handleTestFusionConnection = () => {
+    if (!validateFusionForm()) {
+      setToastType('error');
+      setToastMessage('Please fill in all required fields');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+      return;
+    }
+
+    setIsTestingConnection(true);
+    setConnectionStatus('idle');
+    
+    // Simulate Fusion connection test
+    setTimeout(() => {
+      setIsTestingConnection(false);
+      setConnectionStatus('success');
+      setToastType('success');
+      setToastMessage('Fusion ERM connection successful!');
+      setShowToast(true);
+      setTimeout(() => {
+        setShowToast(false);
+        setConnectionStatus('idle');
+      }, 2000);
+    }, 2000);
+  };
+
+  const handleTestDbConnection = async () => {
+    // Require explicit connection string for testing
+    if (!dbForm.connectionString) {
+      setToastType('error');
+      setToastMessage('Please enter a MongoDB connection string');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+      return;
+    }
+    
+    // Validate format
+    if (!validateDbForm()) {
+      setToastType('error');
+      setToastMessage('Please check your connection string format');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+      return;
+    }
+
+    setIsTestingConnection(true);
+    setConnectionStatus('idle');
+    
+    try {
+      const response = await fetch('/api/mongodb/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connectionString: dbForm.connectionString })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        setIsTestingConnection(false);
+        setConnectionStatus('success');
+        setToastType('success');
+        setToastMessage('MongoDB connection successful!');
+        setShowToast(true);
+        setTimeout(() => {
+          setShowToast(false);
+          setConnectionStatus('idle');
+        }, 2000);
+      } else {
+        throw new Error(data.message);
+      }
+    } catch (error: any) {
+      setIsTestingConnection(false);
+      setConnectionStatus('error');
+      setToastType('error');
+      setToastMessage(error.message || 'Failed to connect to MongoDB');
+      setShowToast(true);
+      setTimeout(() => {
+        setShowToast(false);
+        setConnectionStatus('idle');
+      }, 2000);
+    }
+  };
+
+  const matchInvoiceWithPO = (invoice: any, po: any) => {
+    // Normalize field names (support both camelCase and Title Case from Excel)
+    const getField = (obj: any, ...keys: string[]) => {
+      for (const key of keys) {
+        if (obj[key] !== undefined) return obj[key];
+      }
+      return '';
+    };
+
+    const poNum = getField(po, 'poNumber', 'PO Number');
+    const invPoNum = getField(invoice, 'poNumber', 'PO Number');
+    const poVendor = getField(po, 'vendorName', 'Vendor Name');
+    const invVendor = getField(invoice, 'vendorName', 'Vendor Name');
+    const poDate = getField(po, 'date', 'Date', 'invoiceDate', 'Invoice Date');
+    const invDate = getField(invoice, 'invoiceDate', 'Invoice Date', 'date', 'Date');
+    const poAmount = parseFloat(getField(po, 'totalAmount', 'Total Amount') || 0);
+    const invAmount = parseFloat(getField(invoice, 'totalAmount', 'Total Amount') || 0);
+    const poCurrency = getField(po, 'currency', 'Currency');
+    const invCurrency = getField(invoice, 'currency', 'Currency');
+    const poTerms = getField(po, 'paymentTerms', 'Payment Terms');
+    const invTerms = getField(invoice, 'paymentTerms', 'Payment Terms');
+    const poAddress = getField(po, 'shippingAddress', 'Shipping Address');
+    const invAddress = getField(invoice, 'shippingAddress', 'Shipping Address');
+    const poTax = parseFloat(getField(po, 'taxAmount', 'Tax Amount') || 0);
+    const invTax = parseFloat(getField(invoice, 'taxAmount', 'Tax Amount') || 0);
+
+    const comparisons: FieldComparison[] = [
+      {
+        field: 'PO Number',
+        poValue: poNum,
+        invoiceValue: invPoNum,
+        match: poNum === invPoNum
+      },
+      {
+        field: 'Vendor Name',
+        poValue: poVendor,
+        invoiceValue: invVendor,
+        match: poVendor === invVendor
+      },
+      {
+        field: 'Invoice Date',
+        poValue: poDate,
+        invoiceValue: invDate,
+        match: poDate === invDate
+      },
+      {
+        field: 'Total Amount',
+        poValue: `$${poAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        invoiceValue: `$${invAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        match: Math.abs(poAmount - invAmount) < 0.01
+      },
+      {
+        field: 'Currency',
+        poValue: poCurrency,
+        invoiceValue: invCurrency,
+        match: poCurrency === invCurrency
+      },
+      {
+        field: 'Payment Terms',
+        poValue: poTerms,
+        invoiceValue: invTerms,
+        match: poTerms === invTerms
+      },
+      {
+        field: 'Shipping Address',
+        poValue: poAddress,
+        invoiceValue: invAddress,
+        match: poAddress === invAddress
+      },
+      {
+        field: 'Tax Amount',
+        poValue: `$${poTax.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        invoiceValue: `$${invTax.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        match: Math.abs(poTax - invTax) < 0.01
+      }
+    ];
+
+    const matchCount = comparisons.filter(c => c.match).length;
+    const score = Math.round((matchCount / comparisons.length) * 100);
+    // If even 1 field fails validation, mark as warning (requires review)
+    const status: 'success' | 'warning' = matchCount === comparisons.length ? 'success' : 'warning';
+
+    return {
+      comparisons,
+      score,
+      status
+    };
   };
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100">
-      <Sidebar />
+      <Sidebar 
+        workflowCount={processedResults.length}
+      />
       
       <main className="flex-1 ml-64 p-8">
         {/* Header */}
@@ -100,38 +1219,206 @@ export default function WorkflowPage() {
           <p className="text-slate-600 mt-1">Complete pipeline from data ingestion to validation results</p>
         </div>
 
+        {/* Toast Notification */}
+        {showToast && (
+          <div className="fixed top-8 right-8 z-50 animate-slideDown">
+            <div className={`${
+              toastType === 'success' 
+                ? 'bg-gradient-to-r from-emerald-500 to-green-500' 
+                : 'bg-gradient-to-r from-red-500 to-rose-500'
+            } text-white px-6 py-4 rounded-xl shadow-2xl flex items-center space-x-3`}>
+              {toastType === 'success' ? (
+                <svg className="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              ) : (
+                <svg className="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              )}
+              <span className="font-medium">{toastMessage}</span>
+            </div>
+          </div>
+        )}
+
         {/* Progress Steps */}
-        <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4 flex-1">
-              <div className={`flex items-center ${currentStep === 'ingestion' ? 'opacity-100' : 'opacity-50'}`}>
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white ${
-                  currentStep !== 'ingestion' ? 'bg-green-500' : 'bg-blue-600'
+        <div className="relative bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-xl border border-slate-200 p-8 mb-8 overflow-hidden">
+          {/* Background decoration */}
+          <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-blue-100 to-purple-100 rounded-full opacity-20 blur-3xl -mr-32 -mt-32"></div>
+          
+          <div className="relative">
+            {/* Steps Container */}
+            <div className="flex items-center justify-between mb-6">
+              {/* Step 1: Data Ingestion */}
+              <div className="flex flex-col items-center flex-1 group">
+                <div className={`relative transition-all duration-500 ${
+                  currentStep === 'ingestion' ? 'scale-110' : ''
                 }`}>
-                  {currentStep !== 'ingestion' ? '✓' : '1'}
+                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center font-bold text-white shadow-lg transition-all duration-500 ${
+                    currentStep !== 'ingestion' 
+                      ? 'bg-gradient-to-br from-green-500 to-emerald-600 shadow-green-500/50' 
+                      : 'bg-gradient-to-br from-blue-600 to-indigo-600 shadow-blue-500/50 animate-pulse'
+                  }`}>
+                    {currentStep !== 'ingestion' ? (
+                      <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                    )}
+                  </div>
+                  {currentStep === 'ingestion' && (
+                    <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 animate-ping opacity-20"></div>
+                  )}
                 </div>
-                <span className="ml-3 font-medium text-slate-900">Data Ingestion</span>
-              </div>
-              <div className={`flex-1 h-1 ${currentStep !== 'ingestion' ? 'bg-green-500' : 'bg-slate-300'}`}></div>
-              
-              <div className={`flex items-center ${currentStep === 'processing' ? 'opacity-100' : 'opacity-50'}`}>
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white ${
-                  currentStep === 'results' ? 'bg-green-500' : currentStep === 'processing' ? 'bg-blue-600' : 'bg-slate-300'
+                <div className={`mt-3 text-center transition-all duration-300 ${
+                  currentStep === 'ingestion' ? 'opacity-100' : 'opacity-60'
                 }`}>
-                  {currentStep === 'results' ? '✓' : '2'}
+                  <p className="font-bold text-slate-900 text-sm">Data Ingestion</p>
+                  <p className="text-xs text-slate-600 mt-0.5">Import & Upload</p>
                 </div>
-                <span className="ml-3 font-medium text-slate-900">Processing</span>
               </div>
-              <div className={`flex-1 h-1 ${currentStep === 'results' ? 'bg-green-500' : 'bg-slate-300'}`}></div>
-              
-              <div className={`flex items-center ${currentStep === 'results' ? 'opacity-100' : 'opacity-50'}`}>
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white ${
-                  currentStep === 'results' ? 'bg-blue-600' : 'bg-slate-300'
+
+              {/* Connector 1 */}
+              <div className="flex-1 flex items-center px-4 -mt-8">
+                <div className="w-full relative h-2 bg-slate-200 rounded-full overflow-hidden">
+                  <div className={`absolute inset-0 rounded-full transition-all duration-700 ${
+                    currentStep !== 'ingestion' 
+                      ? 'bg-gradient-to-r from-green-500 to-emerald-500 w-full' 
+                      : 'bg-gradient-to-r from-blue-600 to-indigo-600 w-0'
+                  }`}></div>
+                </div>
+              </div>
+
+              {/* Step 2: AI Processing Engine */}
+              <div className="flex flex-col items-center flex-1 group">
+                <div className={`relative transition-all duration-500 ${
+                  currentStep === 'processing' ? 'scale-110' : ''
                 }`}>
-                  3
+                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center font-bold text-white shadow-lg transition-all duration-500 ${
+                    currentStep === 'output' || currentStep === 'delivery'
+                      ? 'bg-gradient-to-br from-green-500 to-emerald-600 shadow-green-500/50'
+                      : currentStep === 'processing' 
+                        ? 'bg-gradient-to-br from-blue-600 to-indigo-600 shadow-blue-500/50 animate-pulse' 
+                        : 'bg-gradient-to-br from-slate-300 to-slate-400 shadow-slate-400/30'
+                  }`}>
+                    {currentStep === 'output' || currentStep === 'delivery' ? (
+                      <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                      </svg>
+                    )}
+                  </div>
+                  {currentStep === 'processing' && (
+                    <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 animate-ping opacity-20"></div>
+                  )}
                 </div>
-                <span className="ml-3 font-medium text-slate-900">Results</span>
+                <div className={`mt-3 text-center transition-all duration-300 ${
+                  currentStep === 'processing' ? 'opacity-100' : 'opacity-60'
+                }`}>
+                  <p className="font-bold text-slate-900 text-sm">AI Processing</p>
+                  <p className="text-xs text-slate-600 mt-0.5">Analysis & Match</p>
+                </div>
               </div>
+
+              {/* Connector 2 */}
+              <div className="flex-1 flex items-center px-4 -mt-8">
+                <div className="w-full relative h-2 bg-slate-200 rounded-full overflow-hidden">
+                  <div className={`absolute inset-0 rounded-full transition-all duration-700 ${
+                    currentStep === 'output' || currentStep === 'delivery'
+                      ? 'bg-gradient-to-r from-green-500 to-emerald-500 w-full' 
+                      : 'bg-gradient-to-r from-blue-600 to-indigo-600 w-0'
+                  }`}></div>
+                </div>
+              </div>
+
+              {/* Step 3: Output Layer */}
+              <div className="flex flex-col items-center flex-1 group">
+                <div className={`relative transition-all duration-500 ${
+                  currentStep === 'output' ? 'scale-110' : ''
+                }`}>
+                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center font-bold text-white shadow-lg transition-all duration-500 ${
+                    currentStep === 'delivery'
+                      ? 'bg-gradient-to-br from-green-500 to-emerald-600 shadow-green-500/50'
+                      : currentStep === 'output' 
+                        ? 'bg-gradient-to-br from-blue-600 to-indigo-600 shadow-blue-500/50 animate-pulse' 
+                        : 'bg-gradient-to-br from-slate-300 to-slate-400 shadow-slate-400/30'
+                  }`}>
+                    {currentStep === 'delivery' ? (
+                      <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    )}
+                  </div>
+                  {currentStep === 'output' && (
+                    <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 animate-ping opacity-20"></div>
+                  )}
+                </div>
+                <div className={`mt-3 text-center transition-all duration-300 ${
+                  currentStep === 'output' ? 'opacity-100' : 'opacity-60'
+                }`}>
+                  <p className="font-bold text-slate-900 text-sm">Output Layer</p>
+                  <p className="text-xs text-slate-600 mt-0.5">Review Results</p>
+                </div>
+              </div>
+
+              {/* Connector 3 */}
+              <div className="flex-1 flex items-center px-4 -mt-8">
+                <div className="w-full relative h-2 bg-slate-200 rounded-full overflow-hidden">
+                  <div className={`absolute inset-0 rounded-full transition-all duration-700 ${
+                    currentStep === 'delivery'
+                      ? 'bg-gradient-to-r from-green-500 to-emerald-500 w-full' 
+                      : 'bg-gradient-to-r from-blue-600 to-indigo-600 w-0'
+                  }`}></div>
+                </div>
+              </div>
+
+              {/* Step 4: Delivery Layer */}
+              <div className="flex flex-col items-center flex-1 group">
+                <div className={`relative transition-all duration-500 ${
+                  currentStep === 'delivery' ? 'scale-110' : ''
+                }`}>
+                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center font-bold text-white shadow-lg transition-all duration-500 ${
+                    currentStep === 'delivery' 
+                      ? 'bg-gradient-to-br from-blue-600 to-indigo-600 shadow-blue-500/50 animate-pulse' 
+                      : 'bg-gradient-to-br from-slate-300 to-slate-400 shadow-slate-400/30'
+                  }`}>
+                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
+                  </div>
+                  {currentStep === 'delivery' && (
+                    <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 animate-ping opacity-20"></div>
+                  )}
+                </div>
+                <div className={`mt-3 text-center transition-all duration-300 ${
+                  currentStep === 'delivery' ? 'opacity-100' : 'opacity-60'
+                }`}>
+                  <p className="font-bold text-slate-900 text-sm">Delivery Layer</p>
+                  <p className="text-xs text-slate-600 mt-0.5">Export & Share</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="w-full h-1 bg-slate-200 rounded-full overflow-hidden mt-2">
+              <div 
+                className="h-full bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-full transition-all duration-700 ease-out"
+                style={{ 
+                  width: currentStep === 'ingestion' ? '0%' : 
+                         currentStep === 'processing' ? '33%' : 
+                         currentStep === 'output' ? '66%' : '100%' 
+                }}
+              />
             </div>
           </div>
         </div>
@@ -143,11 +1430,17 @@ export default function WorkflowPage() {
             <div>
               <h2 className="text-2xl font-bold text-slate-900 mb-6">Select Data Source</h2>
               
-              <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
                 {ingestionMethods.map((method) => (
                   <button
                     key={method.id}
-                    onClick={() => setSelectedMethod(method.id as IngestionMethod)}
+                    onClick={() => {
+                      if (method.id === 'email') {
+                        setShowEmailModal(true);
+                      } else {
+                        setSelectedMethod(method.id as IngestionMethod);
+                      }
+                    }}
                     className={`relative p-6 rounded-xl border-2 transition-all hover:scale-105 ${
                       selectedMethod === method.id
                         ? 'border-blue-500 bg-blue-50 shadow-lg'
@@ -172,54 +1465,374 @@ export default function WorkflowPage() {
                 ))}
               </div>
 
-              {selectedMethod === 'pdf' && (
-                <div className="mb-6">
-                  <div className="border-2 border-dashed border-slate-300 rounded-lg p-12 text-center hover:border-blue-500 transition-colors cursor-pointer bg-slate-50">
-                    <input
-                      type="file"
-                      multiple
-                      accept=".pdf"
-                      onChange={handleFileUpload}
-                      className="hidden"
-                      id="file-upload"
-                    />
-                    <label htmlFor="file-upload" className="cursor-pointer">
-                      <div className="text-6xl mb-4">📁</div>
-                      <p className="text-lg font-medium text-slate-900 mb-2">Drop PDF files here or click to browse</p>
-                      <p className="text-sm text-slate-600">Support for invoices and purchase orders</p>
-                    </label>
-                  </div>
 
-                  {uploadedFiles.length > 0 && (
-                    <div className="mt-6">
-                      <h4 className="font-medium text-slate-900 mb-3">Uploaded Files ({uploadedFiles.length})</h4>
-                      <div className="space-y-2">
-                        {uploadedFiles.map((file, idx) => (
-                          <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200">
-                            <div className="flex items-center space-x-3">
-                              <span className="text-2xl">📄</span>
-                              <span className="text-sm text-slate-900 font-medium">{file}</span>
-                            </div>
-                            <span className="text-xs text-green-600 font-medium px-3 py-1 bg-green-50 rounded-full">Ready</span>
-                          </div>
-                        ))}
-                      </div>
+              {selectedMethod === 'excel' && (
+                <div className="mb-6">
+                  <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-emerald-300 rounded-xl p-8">
+                    <div className="text-center mb-6">
+                      <div className="text-6xl mb-4">📊</div>
+                      <h3 className="text-xl font-bold text-slate-900 mb-2">Excel Sheet Upload</h3>
+                      <p className="text-sm text-slate-600">Upload an Excel file with invoices and purchase orders</p>
                     </div>
-                  )}
+
+                    <div className="border-2 border-dashed border-emerald-300 rounded-lg p-8 text-center hover:border-emerald-500 transition-colors cursor-pointer bg-white max-w-2xl mx-auto">
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls"
+                        onChange={handleExcelUpload}
+                        className="hidden"
+                        id="excel-upload"
+                      />
+                      <label htmlFor="excel-upload" className="cursor-pointer">
+                        <div className="text-5xl mb-3">📋</div>
+                        <p className="text-lg font-medium text-slate-900 mb-2">Drop Excel file here or click to browse</p>
+                        <p className="text-sm text-slate-600 mb-4">Supported formats: .xlsx, .xls</p>
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-left">
+                          <p className="text-xs font-bold text-emerald-900 mb-1">📝 Excel Format Requirements:</p>
+                          <ul className="text-xs text-emerald-800 space-y-1">
+                            <li>• <strong>Sheet 1:</strong> Invoices (Invoice Number, PO Number, Vendor Name, Invoice Date, Total Amount, Currency, Payment Terms, Shipping Address, Tax Amount)</li>
+                            <li>• <strong>Sheet 2:</strong> Purchase Orders (PO Number, Vendor Name, Date, Total Amount, Currency, Payment Terms, Shipping Address, Tax Amount)</li>
+                          </ul>
+                        </div>
+                      </label>
+                    </div>
+
+                    {uploadedFiles.length > 0 && excelData && (
+                      <div className="mt-6 max-w-2xl mx-auto">
+                        <div className="bg-white rounded-lg p-4 border-2 border-emerald-200">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center space-x-3">
+                              <span className="text-2xl">✅</span>
+                              <span className="text-sm text-slate-900 font-medium">{uploadedFiles[0]}</span>
+                            </div>
+                            <span className="text-xs text-emerald-600 font-medium px-3 py-1 bg-emerald-50 rounded-full">Loaded</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="bg-emerald-50 rounded-lg p-3 text-center">
+                              <p className="text-2xl font-bold text-emerald-600">{excelData.invoices.length}</p>
+                              <p className="text-xs text-slate-600 mt-1">Invoices</p>
+                            </div>
+                            <div className="bg-teal-50 rounded-lg p-3 text-center">
+                              <p className="text-2xl font-bold text-teal-600">{excelData.purchaseOrders.length}</p>
+                              <p className="text-xs text-slate-600 mt-1">Purchase Orders</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
-              {selectedMethod && selectedMethod !== 'pdf' && (
-                <div className="bg-slate-50 rounded-lg p-6 mb-6">
-                  <p className="text-sm text-slate-600 mb-4">Configure your {ingestionMethods.find(m => m.id === selectedMethod)?.name} connection</p>
-                  <div className="space-y-4">
-                    <input
-                      type="text"
-                      placeholder="Connection details..."
-                      className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                    <button className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                      Test Connection
+              {selectedMethod === 'pdf' && (
+                <div className="mb-6">
+                  <div className="bg-gradient-to-br from-red-50 to-rose-50 border-2 border-red-300 rounded-xl p-8">
+                    <div className="text-center mb-6">
+                      <div className="text-6xl mb-4">📄</div>
+                      <h3 className="text-xl font-bold text-slate-900 mb-2">PDF Document Upload</h3>
+                      <p className="text-sm text-slate-600">Upload invoice and purchase order PDF files</p>
+                    </div>
+
+                    <div className="border-2 border-dashed border-red-300 rounded-lg p-8 text-center hover:border-red-500 transition-colors cursor-pointer bg-white max-w-2xl mx-auto">
+                      <input
+                        type="file"
+                        multiple
+                        accept=".pdf"
+                        onChange={handleFileUpload}
+                        className="hidden"
+                        id="file-upload"
+                      />
+                      <label htmlFor="file-upload" className="cursor-pointer">
+                        <div className="text-5xl mb-3">📁</div>
+                        <p className="text-lg font-medium text-slate-900 mb-2">Drop PDF files here or click to browse</p>
+                        <p className="text-sm text-slate-600 mb-4">Upload multiple invoice and PO documents</p>
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-left">
+                          <p className="text-xs font-bold text-red-900 mb-1">📝 PDF Processing:</p>
+                          <ul className="text-xs text-red-800 space-y-1">
+                            <li>• <strong>AI-Powered:</strong> Automatic text extraction and data recognition</li>
+                            <li>• <strong>OCR Support:</strong> Works with scanned documents</li>
+                            <li>• <strong>Multi-Format:</strong> Handles various invoice and PO templates</li>
+                          </ul>
+                        </div>
+                      </label>
+                    </div>
+
+                    {uploadedFiles.length > 0 && pdfData && (
+                      <div className="mt-6 max-w-2xl mx-auto">
+                        <div className="bg-white rounded-lg p-4 border-2 border-red-200">
+                          <h4 className="font-medium text-slate-900 mb-3 flex items-center">
+                            <svg className="w-5 h-5 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            Files Processed ({uploadedFiles.length})
+                          </h4>
+                          <div className="space-y-2 mb-4">
+                            {uploadedFiles.map((file, idx) => (
+                              <div key={idx} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg border border-slate-200">
+                                <div className="flex items-center space-x-2">
+                                  <span className="text-xl">📄</span>
+                                  <span className="text-xs text-slate-900 font-medium truncate">{file}</span>
+                                </div>
+                                <span className="text-xs text-green-600 font-medium px-2 py-1 bg-green-50 rounded-full">✓ Extracted</span>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="bg-red-50 rounded-lg p-3 text-center">
+                              <p className="text-2xl font-bold text-red-600">{pdfData.invoices.length}</p>
+                              <p className="text-xs text-slate-600 mt-1">Invoices Found</p>
+                            </div>
+                            <div className="bg-rose-50 rounded-lg p-3 text-center">
+                              <p className="text-2xl font-bold text-rose-600">{pdfData.purchaseOrders.length}</p>
+                              <p className="text-xs text-slate-600 mt-1">Purchase Orders</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* MongoDB Configuration */}
+              {selectedMethod === 'mongodb' && (
+                <div className="bg-gradient-to-br from-green-50 to-green-100 border-2 border-green-300 rounded-xl p-8 mb-6">
+                  <div className="text-center mb-6">
+                    <div className="text-6xl mb-4">🗄️</div>
+                    <h3 className="text-xl font-bold text-slate-900 mb-2">MongoDB Connection</h3>
+                    <p className="text-sm text-slate-600">Connect to your MongoDB database</p>
+                  </div>
+                  <div className="space-y-4 max-w-2xl mx-auto">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">
+                        Connection String
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="mongodb://localhost:27017"
+                        value={dbForm.connectionString}
+                        onChange={(e) => setDbForm({...dbForm, connectionString: e.target.value})}
+                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-slate-900 ${
+                          dbErrors.connectionString ? 'border-red-500' : 'border-slate-300'
+                        }`}
+                      />
+                      {dbErrors.connectionString ? (
+                        <p className="text-red-600 text-xs mt-1 flex items-center">
+                          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          {dbErrors.connectionString}
+                        </p>
+                      ) : (
+                        <p className="text-slate-500 text-xs mt-1">
+                          💡 Examples: <code className="bg-slate-100 px-2 py-0.5 rounded">mongodb://localhost:27017</code> or <code className="bg-slate-100 px-2 py-0.5 rounded">mongodb+srv://user:pass@cluster.mongodb.net</code>
+                        </p>
+                      )}
+                    </div>
+
+                    {connectionStatus === 'success' && (
+                      <div className="flex items-center space-x-2 p-3 bg-green-100 border border-green-300 rounded-lg">
+                        <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span className="text-sm text-green-700 font-medium">Connection successful!</span>
+                      </div>
+                    )}
+
+                    <button 
+                      onClick={handleTestDbConnection}
+                      disabled={isTestingConnection}
+                      className="w-full px-6 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg hover:from-green-700 hover:to-green-800 transition-colors font-medium shadow-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                    >
+                      {isTestingConnection ? (
+                        <>
+                          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span>Testing Connection...</span>
+                        </>
+                      ) : (
+                        <span>Connect & Test MongoDB</span>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Azure Storage Configuration */}
+              {selectedMethod === 'azure' && (
+                <div className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-300 rounded-xl p-8 mb-6">
+                  <div className="text-center mb-6">
+                    <div className="text-6xl mb-4">☁️</div>
+                    <h3 className="text-xl font-bold text-slate-900 mb-2">Azure Storage Connection</h3>
+                    <p className="text-sm text-slate-600">Connect to Azure Blob Storage</p>
+                  </div>
+                  <div className="space-y-4 max-w-2xl mx-auto">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Storage Account Name</label>
+                      <input
+                        type="text"
+                        placeholder="mystorageaccount"
+                        value={azureForm.accountName}
+                        onChange={(e) => setAzureForm({...azureForm, accountName: e.target.value})}
+                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-900 ${
+                          azureErrors.accountName ? 'border-red-500' : 'border-slate-300'
+                        }`}
+                      />
+                      {azureErrors.accountName && (
+                        <p className="text-red-600 text-xs mt-1">{azureErrors.accountName}</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Access Key</label>
+                      <input
+                        type="password"
+                        placeholder="Your storage account access key"
+                        value={azureForm.accessKey}
+                        onChange={(e) => setAzureForm({...azureForm, accessKey: e.target.value})}
+                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-900 ${
+                          azureErrors.accessKey ? 'border-red-500' : 'border-slate-300'
+                        }`}
+                      />
+                      {azureErrors.accessKey && (
+                        <p className="text-red-600 text-xs mt-1">{azureErrors.accessKey}</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Container Name</label>
+                      <input
+                        type="text"
+                        placeholder="invoices"
+                        value={azureForm.containerName}
+                        onChange={(e) => setAzureForm({...azureForm, containerName: e.target.value})}
+                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-900 ${
+                          azureErrors.containerName ? 'border-red-500' : 'border-slate-300'
+                        }`}
+                      />
+                      {azureErrors.containerName && (
+                        <p className="text-red-600 text-xs mt-1">{azureErrors.containerName}</p>
+                      )}
+                      <p className="text-slate-500 text-xs mt-1">
+                        💡 Blob container where invoice documents are stored
+                      </p>
+                    </div>
+
+                    {connectionStatus === 'success' && (
+                      <div className="flex items-center space-x-2 p-3 bg-green-100 border border-green-300 rounded-lg">
+                        <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span className="text-sm text-green-700 font-medium">Connection successful!</span>
+                      </div>
+                    )}
+
+                    <button 
+                      onClick={handleTestAzureConnection}
+                      disabled={isTestingConnection}
+                      className="w-full px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-colors font-medium shadow-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                    >
+                      {isTestingConnection ? (
+                        <>
+                          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span>Testing Connection...</span>
+                        </>
+                      ) : (
+                        <span>Connect & Test Azure Storage</span>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Fusion ERM Configuration */}
+              {selectedMethod === 'fusion' && (
+                <div className="bg-gradient-to-br from-purple-50 to-purple-100 border-2 border-purple-300 rounded-xl p-8 mb-6">
+                  <div className="text-center mb-6">
+                    <div className="text-6xl mb-4">⚡</div>
+                    <h3 className="text-xl font-bold text-slate-900 mb-2">Fusion ERM Integration</h3>
+                    <p className="text-sm text-slate-600">Connect to Oracle Fusion Cloud ERP</p>
+                  </div>
+                  <div className="space-y-4 max-w-2xl mx-auto">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Instance URL</label>
+                      <input
+                        type="text"
+                        placeholder="https://your-instance.fa.us2.oraclecloud.com"
+                        value={fusionForm.instanceUrl}
+                        onChange={(e) => setFusionForm({...fusionForm, instanceUrl: e.target.value})}
+                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-slate-900 ${
+                          fusionErrors.instanceUrl ? 'border-red-500' : 'border-slate-300'
+                        }`}
+                      />
+                      {fusionErrors.instanceUrl && (
+                        <p className="text-red-600 text-xs mt-1">{fusionErrors.instanceUrl}</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Username</label>
+                      <input
+                        type="text"
+                        placeholder="fusion.user@company.com"
+                        value={fusionForm.username}
+                        onChange={(e) => setFusionForm({...fusionForm, username: e.target.value})}
+                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-slate-900 ${
+                          fusionErrors.username ? 'border-red-500' : 'border-slate-300'
+                        }`}
+                      />
+                      {fusionErrors.username && (
+                        <p className="text-red-600 text-xs mt-1">{fusionErrors.username}</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Password</label>
+                      <input
+                        type="password"
+                        placeholder="Your Fusion password"
+                        value={fusionForm.password}
+                        onChange={(e) => setFusionForm({...fusionForm, password: e.target.value})}
+                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-slate-900 ${
+                          fusionErrors.password ? 'border-red-500' : 'border-slate-300'
+                        }`}
+                      />
+                      {fusionErrors.password && (
+                        <p className="text-red-600 text-xs mt-1">{fusionErrors.password}</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">API Version</label>
+                      <select 
+                        value={fusionForm.apiVersion}
+                        onChange={(e) => setFusionForm({...fusionForm, apiVersion: e.target.value})}
+                        className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-slate-900"
+                      >
+                        <option>v1</option>
+                        <option>v2</option>
+                      </select>
+                      <p className="text-slate-500 text-xs mt-1">
+                        💡 Select the REST API version for your Fusion instance
+                      </p>
+                    </div>
+
+                    {connectionStatus === 'success' && (
+                      <div className="flex items-center space-x-2 p-3 bg-green-100 border border-green-300 rounded-lg">
+                        <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span className="text-sm text-green-700 font-medium">Connection successful!</span>
+                      </div>
+                    )}
+
+                    <button 
+                      onClick={handleTestFusionConnection}
+                      disabled={isTestingConnection}
+                      className="w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-lg hover:from-purple-700 hover:to-purple-800 transition-colors font-medium shadow-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                    >
+                      {isTestingConnection ? (
+                        <>
+                          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span>Testing Connection...</span>
+                        </>
+                      ) : (
+                        <span>Connect & Test Fusion ERM</span>
+                      )}
                     </button>
                   </div>
                 </div>
@@ -228,8 +1841,15 @@ export default function WorkflowPage() {
               <div className="flex justify-end">
                 <button
                   onClick={startProcessing}
-                  disabled={!selectedMethod || (selectedMethod === 'pdf' && uploadedFiles.length === 0)}
-                  className="px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg font-semibold hover:from-blue-700 hover:to-purple-700 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  disabled={
+                    !selectedMethod || 
+                    (selectedMethod === 'pdf' && !pdfData) ||
+                    (selectedMethod === 'excel' && !excelData) ||
+                    (selectedMethod === 'mongodb' && !dbForm.connectionString) ||
+                    (selectedMethod === 'azure' && (!azureForm.accountName || !azureForm.accessKey || !azureForm.containerName)) ||
+                    (selectedMethod === 'fusion' && (!fusionForm.instanceUrl || !fusionForm.username || !fusionForm.password))
+                  }
+                  className="px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg font-semibold hover:from-blue-700 hover:to-purple-700 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
                 >
                   Start Processing →
                 </button>
@@ -237,16 +1857,16 @@ export default function WorkflowPage() {
             </div>
           )}
 
-          {/* PROCESSING STEP */}
+          {/* AI PROCESSING ENGINE STEP */}
           {currentStep === 'processing' && (
             <div>
-              <h2 className="text-2xl font-bold text-slate-900 mb-6">Processing Documents</h2>
+              <h2 className="text-2xl font-bold text-slate-900 mb-6">AI Processing Engine</h2>
               
               <div className="text-center py-12">
                 <div className="inline-block">
                   <div className="w-24 h-24 border-8 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-6"></div>
                   <p className="text-xl font-semibold text-slate-900 mb-2">{progress}% Complete</p>
-                  <p className="text-sm text-slate-600">Extracting data and matching with purchase orders...</p>
+                  <p className="text-sm text-slate-600">AI is analyzing documents and matching with purchase orders...</p>
                 </div>
               </div>
 
@@ -274,17 +1894,17 @@ export default function WorkflowPage() {
             </div>
           )}
 
-          {/* RESULTS STEP */}
-          {currentStep === 'results' && (
+          {/* OUTPUT LAYER STEP */}
+          {currentStep === 'output' && (
             <div>
               <div className="flex items-center justify-between mb-6">
                 <div>
-                  <h2 className="text-2xl font-bold text-slate-900">Processing Complete!</h2>
-                  <p className="text-slate-600 mt-1">Review validation results and insights</p>
+                  <h2 className="text-2xl font-bold text-slate-900">Output Layer - Review Results</h2>
+                  <p className="text-slate-600 mt-1">AI processing complete. Review validation results and insights</p>
                 </div>
                 <button
                   onClick={resetWorkflow}
-                  className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors"
+                  className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors cursor-pointer"
                 >
                   Start New Workflow
                 </button>
@@ -294,17 +1914,29 @@ export default function WorkflowPage() {
               <div className="grid grid-cols-3 gap-6 mb-8">
                 <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-6 text-white">
                   <p className="text-sm opacity-90 mb-2">Success Rate</p>
-                  <p className="text-4xl font-bold">80%</p>
-                  <p className="text-sm opacity-90 mt-2">4 of 5 matched</p>
+                  <p className="text-4xl font-bold">
+                    {processedResults.length > 0 
+                      ? Math.round((processedResults.filter(r => r.status === 'success').length / processedResults.length) * 100)
+                      : 0}%
+                  </p>
+                  <p className="text-sm opacity-90 mt-2">
+                    {processedResults.filter(r => r.status === 'success').length} of {processedResults.length} matched
+                  </p>
                 </div>
                 <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-6 text-white">
                   <p className="text-sm opacity-90 mb-2">Total Amount</p>
-                  <p className="text-4xl font-bold">$105.9K</p>
+                  <p className="text-4xl font-bold">
+                    ${(processedResults.reduce((sum, r) => sum + r.amount, 0) / 1000).toFixed(1)}K
+                  </p>
                   <p className="text-sm opacity-90 mt-2">Validated</p>
                 </div>
                 <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-6 text-white">
                   <p className="text-sm opacity-90 mb-2">Avg Score</p>
-                  <p className="text-4xl font-bold">91%</p>
+                  <p className="text-4xl font-bold">
+                    {processedResults.length > 0
+                      ? Math.round(processedResults.reduce((sum, r) => sum + r.score, 0) / processedResults.length)
+                      : 0}%
+                  </p>
                   <p className="text-sm opacity-90 mt-2">Match confidence</p>
                 </div>
               </div>
@@ -318,17 +1950,24 @@ export default function WorkflowPage() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">PO</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Vendor</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Amount</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Source</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Score</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-slate-200">
-                    {processedResults.map((result) => (
+                    {currentResults.map((result) => (
                       <tr key={result.id} className="hover:bg-slate-50">
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">{result.invoice}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{result.po}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{result.vendor}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">${result.amount.toLocaleString()}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-900">${result.amount.toLocaleString()}</td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded">
+                            {result.source}
+                          </span>
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`font-bold ${result.status === 'success' ? 'text-green-600' : 'text-yellow-600'}`}>
                             {result.score}%
@@ -343,23 +1982,576 @@ export default function WorkflowPage() {
                             {result.status === 'success' ? 'Matched' : 'Review Required'}
                           </span>
                         </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <button
+                            onClick={() => openComparisonModal(result)}
+                            className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-medium rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md hover:shadow-lg cursor-pointer"
+                          >
+                            View Details
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+
+                {/* Pagination Controls */}
+                {processedResults.length > itemsPerPage && (
+                  <div className="bg-slate-50 px-6 py-4 border-t border-slate-200">
+                    <div className="flex items-center justify-between">
+                      {/* Results info */}
+                      <div className="text-sm text-slate-600">
+                        Showing <span className="font-medium text-slate-900">{indexOfFirstItem + 1}</span> to{' '}
+                        <span className="font-medium text-slate-900">
+                          {Math.min(indexOfLastItem, processedResults.length)}
+                        </span>{' '}
+                        of <span className="font-medium text-slate-900">{processedResults.length}</span> results
+                      </div>
+
+                      {/* Pagination buttons */}
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={goToPreviousPage}
+                          disabled={currentPage === 1}
+                          className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                        >
+                          Previous
+                        </button>
+
+                        {/* Page numbers */}
+                        <div className="flex space-x-1">
+                          {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => {
+                            // Show first page, last page, current page, and pages around current
+                            if (
+                              pageNum === 1 ||
+                              pageNum === totalPages ||
+                              (pageNum >= currentPage - 1 && pageNum <= currentPage + 1)
+                            ) {
+                              return (
+                                <button
+                                  key={pageNum}
+                                  onClick={() => goToPage(pageNum)}
+                                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+                                    currentPage === pageNum
+                                      ? 'bg-blue-600 text-white'
+                                      : 'border border-slate-300 text-slate-700 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  {pageNum}
+                                </button>
+                              );
+                            } else if (
+                              pageNum === currentPage - 2 ||
+                              pageNum === currentPage + 2
+                            ) {
+                              return <span key={pageNum} className="px-2 text-slate-400">...</span>;
+                            }
+                            return null;
+                          })}
+                        </div>
+
+                        <button
+                          onClick={goToNextPage}
+                          disabled={currentPage === totalPages}
+                          className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div className="flex justify-end mt-6 space-x-4">
-                <button className="px-6 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors">
-                  Export Report
-                </button>
-                <button className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                  Approve & Submit
+              <div className="flex justify-end mt-6">
+                <button 
+                  onClick={moveToDelivery}
+                  className="px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all shadow-lg cursor-pointer font-semibold"
+                >
+                  Proceed to Delivery →
                 </button>
               </div>
             </div>
           )}
+
+          {/* DELIVERY LAYER STEP */}
+          {currentStep === 'delivery' && (
+            <div>
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900">Delivery Layer - Final Actions</h2>
+                  <p className="text-slate-600 mt-1">Export, share, and submit your validated invoices</p>
+                </div>
+                <button
+                  onClick={resetWorkflow}
+                  className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors cursor-pointer"
+                >
+                  Start New Workflow
+                </button>
+              </div>
+
+              {/* Delivery Options */}
+              <div className="grid md:grid-cols-2 gap-6 mb-8">
+                <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-6 text-white hover:scale-105 transition-transform cursor-pointer shadow-lg">
+                  <div className="text-4xl mb-4">📊</div>
+                  <h3 className="text-xl font-bold mb-2">Generate Reports</h3>
+                  <p className="text-sm opacity-90 mb-4">Download comprehensive PDF and Excel reports with detailed analysis</p>
+                  <button 
+                    onClick={handleGenerateReports}
+                    className="w-full px-4 py-2 bg-white/20 backdrop-blur rounded-lg hover:bg-white/30 transition-colors font-medium cursor-pointer"
+                  >
+                    Download Reports
+                  </button>
+                </div>
+
+                <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-6 text-white hover:scale-105 transition-transform cursor-pointer shadow-lg">
+                  <div className="text-4xl mb-4">✉️</div>
+                  <h3 className="text-xl font-bold mb-2">Email Notifications</h3>
+                  <p className="text-sm opacity-90 mb-4">Send results to stakeholders via email</p>
+                  <button 
+                    onClick={handleEmailNotifications}
+                    className="w-full px-4 py-2 bg-white/20 backdrop-blur rounded-lg hover:bg-white/30 transition-colors font-medium cursor-pointer"
+                  >
+                    Configure Email
+                  </button>
+                </div>
+              </div>
+
+              {/* Summary Stats */}
+              <div className="bg-slate-50 rounded-xl p-6 mb-6 border border-slate-200">
+                <h3 className="text-lg font-bold text-slate-900 mb-4">Delivery Summary</h3>
+                <div className="grid grid-cols-4 gap-4">
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-blue-600">{processedResults.length}</p>
+                    <p className="text-xs text-slate-600 mt-1">Total Invoices</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-green-600">{processedResults.filter(r => r.status === 'success').length}</p>
+                    <p className="text-xs text-slate-600 mt-1">Successfully Matched</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-yellow-600">{processedResults.filter(r => r.status === 'warning').length}</p>
+                    <p className="text-xs text-slate-600 mt-1">Requires Review</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-purple-600">
+                      ${(processedResults.reduce((sum, r) => sum + r.amount, 0) / 1000).toFixed(1)}K
+                    </p>
+                    <p className="text-xs text-slate-600 mt-1">Total Value</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* API Integration Options */}
+              <div className="bg-white rounded-lg border-2 border-slate-200 p-6 mb-6">
+                <h3 className="text-lg font-bold text-slate-900 mb-4">API Integration</h3>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <span className="text-xl">🔗</span>
+                      </div>
+                      <div>
+                        <p className="font-medium text-slate-900">REST API Webhook</p>
+                        <p className="text-xs text-slate-600">Push results to external systems</p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={handleConfigureWebhook}
+                      className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 cursor-pointer"
+                    >
+                      Configure
+                    </button>
+                  </div>
+                  
+                  <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                        <span className="text-xl">💾</span>
+                      </div>
+                      <div>
+                        <p className="font-medium text-slate-900">Database Sync</p>
+                        <p className="text-xs text-slate-600">Sync with MongoDB or SQL database</p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={handleDatabaseSync}
+                      className="px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 cursor-pointer"
+                    >
+                      Configure
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Final Actions */}
+              <div className="flex justify-between items-center pt-4 border-t border-slate-200">
+                <button 
+                  onClick={() => setCurrentStep('output')}
+                  className="px-6 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"
+                >
+                  ← Back to Output
+                </button>
+                <div className="flex space-x-4">
+                  <button 
+                    onClick={handleScheduleDelivery}
+                    className="px-6 py-2 border-2 border-green-600 text-green-600 rounded-lg hover:bg-green-50 transition-colors font-medium cursor-pointer"
+                  >
+                    Schedule Delivery
+                  </button>
+                  <button 
+                    onClick={handleSubmitAndDeliver}
+                    className="px-8 py-2 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg hover:from-green-700 hover:to-green-800 transition-all shadow-lg font-medium cursor-pointer"
+                  >
+                    Submit & Deliver Now
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
+
+        {/* Email Inbox Modal */}
+        {showEmailModal && (
+          <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
+            <div className="bg-white rounded-3xl shadow-2xl max-w-5xl w-full max-h-[85vh] overflow-hidden animate-slideUp">
+              {/* Modal Header */}
+              <div className="bg-gradient-to-r from-blue-600 via-blue-500 to-blue-600 px-8 py-6 text-white">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-2xl font-bold tracking-tight flex items-center">
+                      <span className="text-3xl mr-3">📧</span>
+                      Email Inbox - Auto-Forwarded Messages
+                    </h3>
+                    <p className="text-blue-100 mt-1 font-medium">Select an invoice email to process</p>
+                  </div>
+                  <button
+                    onClick={() => setShowEmailModal(false)}
+                    className="w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors cursor-pointer"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                
+                {/* Stats Bar */}
+                <div className="mt-4 flex items-center space-x-6 bg-white/10 backdrop-blur rounded-xl p-3">
+                  <div className="text-center">
+                    <p className="text-2xl font-bold">{emailInbox.filter(e => e.matchesCriteria).length}</p>
+                    <p className="text-xs opacity-90">Valid Invoices</p>
+                  </div>
+                  <div className="h-8 w-px bg-white/30"></div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold">{emailInbox.filter(e => !e.matchesCriteria).length}</p>
+                    <p className="text-xs opacity-90">Other Messages</p>
+                  </div>
+                  <div className="h-8 w-px bg-white/30"></div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold">{emailInbox.length}</p>
+                    <p className="text-xs opacity-90">Total Messages</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Body - Email List */}
+              <div className="overflow-y-auto max-h-[calc(85vh-200px)] p-6 bg-gradient-to-br from-slate-50 to-white">
+                <div className="space-y-3">
+                  {emailInbox.map((email) => (
+                    <button
+                      key={email.id}
+                      onClick={() => handleEmailSelect(email.id)}
+                      disabled={!email.matchesCriteria}
+                      className={`w-full text-left p-5 rounded-xl border-2 transition-all ${
+                        email.matchesCriteria
+                          ? 'border-blue-200 bg-gradient-to-br from-white to-blue-50 hover:border-blue-400 hover:shadow-lg cursor-pointer transform hover:scale-[1.02]'
+                          : 'border-slate-200 bg-slate-100 opacity-60 cursor-not-allowed'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center space-x-3 flex-1">
+                          {/* Status Icon */}
+                          <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                            email.matchesCriteria
+                              ? 'bg-gradient-to-br from-emerald-500 to-green-600 text-white shadow-lg'
+                              : 'bg-slate-300 text-slate-600'
+                          }`}>
+                            {email.hasAttachment ? (
+                              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                              </svg>
+                            ) : (
+                              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                              </svg>
+                            )}
+                          </div>
+
+                          {/* Email Info */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center space-x-2 mb-1">
+                              <p className={`font-bold text-sm truncate ${
+                                email.matchesCriteria ? 'text-slate-900' : 'text-slate-600'
+                              }`}>
+                                {email.from}
+                              </p>
+                              {email.isAutoForwarded && (
+                                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-bold rounded">
+                                  AUTO-FWD
+                                </span>
+                              )}
+                              {email.hasAttachment && (
+                                <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-bold rounded">
+                                  📎 PDF
+                                </span>
+                              )}
+                            </div>
+                            <p className={`font-semibold mb-1 ${
+                              email.matchesCriteria ? 'text-slate-900' : 'text-slate-500'
+                            }`}>
+                              {email.subject}
+                            </p>
+                            <p className={`text-xs line-clamp-1 ${
+                              email.matchesCriteria ? 'text-slate-600' : 'text-slate-400'
+                            }`}>
+                              {email.preview}
+                            </p>
+                          </div>
+
+                          {/* Date & Action */}
+                          <div className="flex flex-col items-end space-y-2">
+                            <p className="text-xs text-slate-500 whitespace-nowrap">{email.date}</p>
+                            {email.matchesCriteria ? (
+                              <span className="px-3 py-1 bg-gradient-to-r from-emerald-500 to-green-600 text-white text-xs font-bold rounded-full shadow-md">
+                                ✓ Ready to Process
+                              </span>
+                            ) : (
+                              <span className="px-3 py-1 bg-slate-300 text-slate-600 text-xs font-bold rounded-full">
+                                ✗ Not Invoice
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Hover Effect Indicator */}
+                      {email.matchesCriteria && (
+                        <div className="mt-3 pt-3 border-t border-blue-200">
+                          <p className="text-xs text-blue-600 font-medium flex items-center">
+                            <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                            </svg>
+                            Click to extract invoice data and continue workflow
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Disabled Message */}
+                      {!email.matchesCriteria && (
+                        <div className="mt-3 pt-3 border-t border-slate-200">
+                          <p className="text-xs text-slate-500 flex items-center">
+                            <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            {!email.isAutoForwarded 
+                              ? 'Not auto-forwarded - manual emails are filtered out' 
+                              : !email.hasAttachment
+                                ? 'No attachment found - invoices must have PDF attachments'
+                                : 'Does not match invoice criteria'}
+                          </p>
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Info Panel */}
+                <div className="mt-6 bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
+                  <div className="flex items-start space-x-3">
+                    <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="font-bold text-blue-900 text-sm mb-1">Auto-Forwarded Email Filtering</p>
+                      <p className="text-xs text-blue-800 leading-relaxed">
+                        The system automatically identifies invoice emails based on:<br/>
+                        • <strong>Auto-forwarded tag</strong> in the subject line<br/>
+                        • <strong>PDF attachments</strong> containing invoice data<br/>
+                        • <strong>Vendor email addresses</strong> matching your approved list<br/>
+                        Only validated emails can be selected for processing.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="bg-gradient-to-r from-slate-100 to-slate-50 px-8 py-5 border-t-2 border-slate-200 flex items-center justify-between">
+                <p className="text-sm text-slate-600">
+                  <span className="font-bold text-emerald-600">{emailInbox.filter(e => e.matchesCriteria).length}</span> invoice emails ready to process
+                </p>
+                <button
+                  onClick={() => setShowEmailModal(false)}
+                  className="px-6 py-2.5 bg-slate-700 text-white rounded-lg hover:bg-slate-800 transition-colors font-medium shadow-md cursor-pointer"
+                >
+                  Close Inbox
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Comparison Modal */}
+        {showModal && selectedResult && (
+          <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
+            <div className="bg-white rounded-3xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden animate-slideUp">
+              {/* Modal Header */}
+              <div className="bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 px-8 py-6 text-white border-b border-slate-600">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-2xl font-bold tracking-tight">Document Validation Report</h3>
+                    <p className="text-slate-300 mt-1 font-medium">Invoice {selectedResult.invoice} • Purchase Order {selectedResult.po}</p>
+                  </div>
+                  <button
+                    onClick={closeModal}
+                    className="w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors cursor-pointer"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                
+                {/* Score Badge */}
+                <div className="mt-5 flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    <div className={`px-6 py-2 rounded-xl font-bold text-base shadow-lg ${
+                      selectedResult.status === 'success' 
+                        ? 'bg-emerald-500 text-white' 
+                        : 'bg-amber-500 text-white'
+                    }`}>
+                      Match Score: {selectedResult.score}%
+                    </div>
+                    <div className="bg-slate-600 px-4 py-2 rounded-xl text-sm font-medium">
+                      Vendor: {selectedResult.vendor}
+                    </div>
+                  </div>
+                  <div className="text-sm text-slate-300">
+                    {selectedResult.fieldComparisons.filter(f => f.match).length} / {selectedResult.fieldComparisons.length} fields validated
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Body */}
+              <div className="overflow-y-auto max-h-[calc(90vh-280px)] p-8 bg-gradient-to-br from-slate-50 to-white">
+                <div className="space-y-4">
+                  {selectedResult.fieldComparisons.map((comparison, idx) => (
+                    <div 
+                      key={idx}
+                      className={`rounded-2xl p-6 transition-all shadow-md hover:shadow-lg ${
+                        comparison.match 
+                          ? 'bg-gradient-to-br from-emerald-50 to-green-50 border-2 border-emerald-200' 
+                          : 'bg-gradient-to-br from-red-50 to-rose-50 border-2 border-red-200'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-bold text-slate-900 text-base">{comparison.field}</h4>
+                        <div className={`px-4 py-1.5 rounded-lg text-xs font-bold shadow-sm ${
+                          comparison.match 
+                            ? 'bg-emerald-500 text-white' 
+                            : 'bg-red-500 text-white'
+                        }`}>
+                          {comparison.match ? '✓ VALIDATED' : '✗ MISMATCH'}
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-5">
+                        {/* Purchase Order Value */}
+                        <div className="bg-white rounded-xl p-5 border-2 border-slate-200 shadow-sm">
+                          <p className="text-xs font-bold text-slate-600 uppercase mb-3 flex items-center tracking-wide">
+                            <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            Purchase Order
+                          </p>
+                          <p className={`text-base font-bold ${
+                            comparison.match ? 'text-emerald-700' : 'text-red-700'
+                          }`}>
+                            {comparison.poValue}
+                          </p>
+                        </div>
+
+                        {/* Invoice Value */}
+                        <div className="bg-white rounded-xl p-5 border-2 border-slate-200 shadow-sm">
+                          <p className="text-xs font-bold text-slate-600 uppercase mb-3 flex items-center tracking-wide">
+                            <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            Invoice
+                          </p>
+                          <p className={`text-base font-bold ${
+                            comparison.match ? 'text-emerald-700' : 'text-red-700'
+                          }`}>
+                            {comparison.invoiceValue}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Mismatch Warning */}
+                      {!comparison.match && (
+                        <div className="mt-4 p-4 bg-red-100 border-l-4 border-red-500 rounded-r-lg">
+                          <p className="text-sm text-red-900 font-medium flex items-center">
+                            <svg className="w-5 h-5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            Manual review required - Data discrepancy detected
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="bg-gradient-to-r from-slate-100 to-slate-50 px-8 py-6 pb-8 border-t-2 border-slate-200 flex items-center justify-between flex-wrap gap-4">
+                <div className="flex items-center space-x-6">
+                  <div className="text-sm">
+                    <span className="font-bold text-emerald-600 text-lg">
+                      {selectedResult.fieldComparisons.filter(f => f.match).length}
+                    </span>
+                    <span className="text-slate-600 ml-1">/ {selectedResult.fieldComparisons.length} fields validated</span>
+                  </div>
+                  <div className={`px-4 py-2 rounded-lg font-semibold text-sm ${
+                    selectedResult.status === 'success'
+                      ? 'bg-emerald-100 text-emerald-700 border border-emerald-300'
+                      : 'bg-amber-100 text-amber-700 border border-amber-300'
+                  }`}>
+                    {selectedResult.status === 'success' ? 'Validation Passed' : 'Review Required'}
+                  </div>
+                </div>
+                <div className="flex space-x-3">
+                  {selectedResult.status === 'warning' && (
+                    <button 
+                      onClick={handleManualReview}
+                      className="px-6 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-lg hover:from-amber-700 hover:to-orange-700 transition-all shadow-lg font-medium cursor-pointer"
+                    >
+                      Request Manual Review
+                    </button>
+                  )}
+                  <button
+                    onClick={closeModal}
+                    className="px-6 py-2.5 bg-slate-700 text-white rounded-lg hover:bg-slate-800 transition-colors font-medium shadow-md cursor-pointer"
+                  >
+                    Close Report
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
