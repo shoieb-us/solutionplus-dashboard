@@ -3,13 +3,18 @@
 import { useRouter, usePathname } from 'next/navigation';
 import { useState } from 'react';
 
-export default function Sidebar() {
+interface SidebarProps {
+  workflowCount?: number;
+}
+
+export default function Sidebar({ workflowCount = 0 }: SidebarProps = {}) {
   const router = useRouter();
   const pathname = usePathname();
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   const menuItems = [
     {
+      id: 'dashboard',
       name: 'Dashboard',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -20,6 +25,7 @@ export default function Sidebar() {
       badge: null
     },
     {
+      id: 'workflow',
       name: 'Invoice Workflow',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -27,9 +33,21 @@ export default function Sidebar() {
         </svg>
       ),
       path: '/workflow',
-      badge: '3'
+      badge: workflowCount > 0 ? workflowCount.toString() : null
     },
     {
+      id: 'processed',
+      name: 'Processed Workflows',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+        </svg>
+      ),
+      path: '/processed',
+      badge: null
+    },
+    {
+      id: 'analytics',
       name: 'Analytics',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -40,6 +58,7 @@ export default function Sidebar() {
       badge: null
     },
     {
+      id: 'vendors',
       name: 'Vendors',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -50,6 +69,7 @@ export default function Sidebar() {
       badge: null
     },
     {
+      id: 'purchase-orders',
       name: 'Purchase Orders',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -60,6 +80,7 @@ export default function Sidebar() {
       badge: '24'
     },
     {
+      id: 'reports',
       name: 'Reports',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -70,6 +91,7 @@ export default function Sidebar() {
       badge: null
     },
     {
+      id: 'settings',
       name: 'Settings',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -137,9 +159,9 @@ export default function Sidebar() {
             const isActive = pathname === item.path;
             return (
               <button
-                key={item.path}
+                key={item.id}
                 onClick={() => router.push(item.path)}
-                className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all group ${
+                className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all group cursor-pointer ${
                   isActive
                     ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg'
                     : 'text-slate-300 hover:bg-slate-700 hover:text-white'
@@ -169,7 +191,7 @@ export default function Sidebar() {
         {!isCollapsed ? (
           <button
             onClick={() => router.push('/login')}
-            className="w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-slate-300 hover:bg-red-600 hover:text-white transition-all"
+            className="w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-slate-300 hover:bg-red-600 hover:text-white transition-all cursor-pointer"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -179,7 +201,7 @@ export default function Sidebar() {
         ) : (
           <button
             onClick={() => router.push('/login')}
-            className="w-full flex justify-center p-2.5 rounded-lg text-slate-300 hover:bg-red-600 hover:text-white transition-all"
+            className="w-full flex justify-center p-2.5 rounded-lg text-slate-300 hover:bg-red-600 hover:text-white transition-all cursor-pointer"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
